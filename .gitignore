@@ -32,8 +32,10 @@ _smoke_*.py
 /tools/local_dev/
 
 # Source-only distribution: local data must never be committed
-# (input/ ignores its own content via its nested .gitignore)
-/output/
+# (input/, output/, name_sources/ ignore their own content
+# via their nested .gitignore files, which ARE tracked)
+/output/*
+!/output/.gitignore
 /logs/
 # (name_sources/ ignores its own content via its nested .gitignore)
 *.db
