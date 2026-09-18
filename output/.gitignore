@@ -1,0 +1,8 @@
+# This folder is meant for the analysis results
+# (catalog.db, species folders, copied images).
+# It is created automatically on first launch if missing.
+#
+# The rules below keep the folder in Git but ignore
+# any content (your catalog and photos stay local):
+*
+!.gitignore
