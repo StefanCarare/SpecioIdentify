@@ -1,0 +1,3 @@
+Identifică planta din imagine. 
+Răspunde doar cu genul și specia în latină. 
+Nu oferi explicații.

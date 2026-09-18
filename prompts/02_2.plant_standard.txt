@@ -1,0 +1,17 @@
+Identifică planta sau floarea sălbatică din imagine.
+
+Răspunde în română și structurează răspunsul EXACT după următorul ghid:
+
+1. **Identificare**
+   * **Numele comun :** denumirea populară #română#
+   * **Numele comun :** denumirea populară #engleză#.
+   * **Numele științific:** genul și specia în latină, dacă pot fi stabilite.
+   * **Încrederea identificării:** Ridicată, medie sau scăzută.
+
+2. **Ce se vede în fotografie**
+   Descrie în 2-4 propoziții doar caracteristicile morfologice vizibile direct în imagine care susțin identificarea. Nu deduce și nu inventa structuri care nu se disting clar.
+
+3. **Confuzie posibilă**
+   Menționează o singură specie apropiată cu care planta poate fi confundată și un singur criteriu vizual clar prin care poate fi diferențiată.
+
+Nu repeta informații și nu adăuga explicații enciclopedice. Dacă identificarea la nivel de specie este nesigură, precizează clar acest lucru.

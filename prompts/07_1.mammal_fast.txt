@@ -1,0 +1,3 @@
+Identifică mamiferul din imagine.
+Răspunde doar cu genul și specia în latină, dacă pot fi stabilite din caracteristicile vizibile.
+Nu oferi explicații. Dacă specia nu poate fi stabilită, sau organismul din imagine nu este un mamifer, răspunde „Identificare nesigură”, fără să inventezi un binom.

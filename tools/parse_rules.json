@@ -1,0 +1,62 @@
+{
+  "entry": {
+    "pattern": "^([A-ZĂÂÎȘȚŞŢ](?:[A-ZĂÂÎȘȚŞŢ\\-]+[a-zăâîșțşţ]?|[a-zăâîșțşţ\\-]{2,}))\\s+([a-zăâîșțşţ][a-zăâîșțşţ\\-]{2,})\\b(.*)$",
+    "desc": "Detectează linia de antet a unei intrări (gen + specie + rest)"
+  },
+  "synonym": {
+    "pattern": "\\(([A-ZĂÂÎȘȚŞŢ][A-Za-zăâîșțşţ\\-]+)\\s+([a-zăâîșțşţ][a-zăâîșțşţ\\-]+)",
+    "desc": "Extrage sinonimele din paranteze (ex: (Prunus armeniaca L.))"
+  },
+  "citation": {
+    "pattern": "\\s*\\([^()]*\\)\\s*",
+    "desc": "Elimină citările din denumiri (ex: (180, 603))"
+  },
+  "stop_line": {
+    "pattern": "^\\s*(Magh|Franc|Eng|Germ|Ung|Slov|Ceh|Bul|Serb|Ucr|Rus|Ital|Esp|Neerl|Pol|Dan|Sued|Fam)\\b\\s*[.:]",
+    "flags": [
+      "IGNORECASE"
+    ],
+    "desc": "Secțiuni străine care termină zona de denumiri românești"
+  },
+  "alte_numiri": {
+    "pattern": "A\\s*l\\s*t\\s*e\\s+n\\s*u\\s*(?:m|n)\\s*i\\s*r\\s*i\\s*:",
+    "flags": [
+      "IGNORECASE"
+    ],
+    "desc": "Oprește extragerea denumirilor înainte de «Alte numiri:» (tolerant la spațieri OCR: «Alte n uniri:»)"
+  },
+  "fam": {
+    "pattern": "F\\s*[ao]\\s*(?:m|in)\\b\\.?",
+    "flags": [
+      "IGNORECASE"
+    ],
+    "desc": "Oprește extragerea denumirilor înainte de «Fam.» (tolerant OCR: «Fain.», «Fom»)"
+  },
+  "genus_header": {
+    "pattern": "^[A-ZĂÂÎȘȚŞŢ]{3,}\\s+[A-ZĂÂÎȘȚŞŢ]",
+    "desc": "Antete de GEN (ex: «CONVOLVULUS L.», «EPIPACTIS Zinn.») — nu sunt specii, nu intră în denumiri"
+  },  
+  "dash": {
+    "pattern": "(?:[—–]|\\s-\\s)\\s*(.+)$",
+    "flags": [
+      "DOTALL"
+    ],
+    "desc": "Separatorul — între nume științific și denumirea populară"
+  },
+  "has_letter": {
+    "pattern": "[A-Za-zăâîșțşţ]",
+    "desc": "Verifică dacă textul conține litere (filtru anti-zgomot)"
+  },
+  "alpha_tab": {
+    "pattern": "[A-ZĂÂÎȘȚŞŢ]{2,4}",
+    "desc": "Taburi alfabetice de navigare (BER, DOR...) — se ignoră"
+  },
+  "page_number": {
+    "pattern": "\\d{1,3}",
+    "desc": "Numere de pagină — se ignoră"
+  },
+  "valid_name_noise": {
+    "pattern": "\\)|\\(|jud\\.|Herb\\.|exsicc|Trans\\.|Mold\\.|Banat\\)|folosește",
+    "desc": "Zgomot OCR care invalidează o denumire"
+  }
+}

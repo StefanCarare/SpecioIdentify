@@ -1,0 +1,10 @@
+# Core dependencies
+Pillow>=10.0.0
+requests>=2.31.0
+piexif>=1.1.3
+
+# Excel support (for vernacular name import)
+openpyxl>=3.1.0
+
+# PDF support (for parsing book sources)
+PyMuPDF>=1.24.0

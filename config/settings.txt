@@ -1,0 +1,12 @@
+OLLAMA_URL=http://localhost:11434
+MODEL=muse-glimmer
+NUM_CTX=8192
+NUM_PREDICT=3000
+THINKING=false
+# Setări pentru generărire profilului speciei (text-only, la nivel de specie)
+# Cantitate mai mică de tokenuri => generare mai rapidă.
+PROFILE_NUM_PREDICT=4000
+PROFILE_THINKING=false
+# Model text-only folosit de GEN PROFILE (gol = MODEL; ex. llama3.2:3b)
+PROFILE_MODEL=muse-glimmer:latest
+LANGUAGE=ro

@@ -1,0 +1,5 @@
+APP_ROOT=.
+INPUT_DIR=input
+OUTPUT_DIR=output
+PROMPT_DIR=prompts
+LOG_DIR=logs

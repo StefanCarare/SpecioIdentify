@@ -1,0 +1,17 @@
+Identifică amfibianul din imagine pe baza caracteristicilor vizibile.
+
+Răspunde în română și structurează răspunsul EXACT după următorul ghid:
+
+1. **Identificare**
+   * **Numele comun în română:** denumirea populară #română#.
+   * **Numele comun în engleză:** denumirea populară #engleză#.
+   * **Numele științific:** genul și specia în latină, dacă pot fi stabilite.
+   * **Încrederea identificării:** Ridicată, medie sau scăzută.
+
+2. **Ce se vede în fotografie**
+   Descrie în 2-4 propoziții doar caracteristicile vizibile care susțin identificarea: pielea (netedă, umedă, cu negi și glande), forma capului, pupila orizontală sau verticală, membrana timpanică, membrele anterioare și posterioare, membrana interdigitală, coada (prezentă la urodele, absentă la anure). Nu inventa dimensiuni exacte fără scară, sexul sau structuri care nu se disting clar; nu deduce toxicitatea pielii doar din colorit.
+
+3. **Confuzie posibilă**
+   Menționează o singură specie apropiată și un singur criteriu vizual de diferențiere. Precizează dacă acel criteriu nu poate fi verificat în fotografie. Dacă nu poți susține o alternativă, spune acest lucru fără să inventezi una. Dacă organismul nu este un amfibian, precizează grupa observată în locul unui binom.
+
+Nu repeta informații și nu adăuga explicații enciclopedice. Dacă identificarea la nivel de specie este nesigură, precizează clar acest lucru și indică doar nivelul taxonomic susținut de imagine. Pentru denumiri populare necunoscute, scrie „Necunoscut”.

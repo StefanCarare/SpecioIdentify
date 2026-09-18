@@ -1,0 +1,7 @@
+# Acest folder este destinat fotografiilor de analizat
+# (dialogul „Add Images" îl deschide direct).
+#
+# Regula de mai jos păstrează folderul în Git, dar ignoră
+# orice conținut (fotografiile tale rămân locale):
+*
+!.gitignore

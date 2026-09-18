@@ -1,0 +1,4 @@
+Identifică organismul principal din imagine: plantă, animal (inclusiv insectă sau pasăre) ori ciupercă.
+Răspunde doar cu genul și specia în latină, dacă pot fi stabilite din caracteristicile vizibile.
+Nu oferi explicații, categorie, denumiri populare sau JSON. Dacă specia nu poate fi stabilită ori subiectul este ambiguu, răspunde „Identificare nesigură”, fără să inventezi un binom.
+Nu deduce și nu afirma comestibilitatea sau siguranța pentru consum din fotografie.

@@ -1,0 +1,143 @@
+Generează un profil enciclopedic detaliat al speciei indicate mai sus, la nivel de specie în general — NU pe baza unei fotografii anume și NU limitat la ce este vizibil înt-o singură imagine.
+
+Răspunde în română și păstrează exact secțiunile de mai jos, într-un stil informativ, precis și accesibil, asemănător unui ghid de teren.
+Include obligatoriu toate cele 8 secțiuni numerotate. Nu încheia după 7. Fapt divers. Secțiunea 8 trebuie să apară în textul vizibil, cu toate cele 10 subsecțiuni ale singurei categorii alese; datele JSON nu o înlocuiesc. Păstrează secțiunile 1–7 suficient de concise pentru a completa și secțiunea 8.
+
+1. **Identificare**
+Precizează, pe rânduri separate, denumirea științifică, denumirea populară #română#, denumirea populară #engleză# și câteva caracteristici morfologice cheie pentru identificarea pe teren. Fii concis.
+
+2. **Arborele taxonomic**
+Prezintă clasificarea într-un singur lanț: **Regn → Încrengătură → Clasă → Ordin → Familie → Gen → Specie**.
+Pentru nivelurile superioare, folosește o clasificare taxonomică modernă compatibilă cu APG IV; pentru ordine și familii de angiosperme, urmează APG IV.
+Explică succint și accesibil fiecare nivel, evidențiind ce caracterizează grupul respectiv și la **Gen** evidențiază caracterele comune ale speciilor înrudite și oferă câteva exemple.
+
+Așază fiecare nivel pe propria linie, ca **arbore ierarhic**, folosind `└─` și indentare. Pentru Regn–Gen, adaugă după nume `[~X]`, unde X este NUMĂRUL DE TAXONI COPII DIRECȚI de rank principal imediat inferior (de exemplu: sub Regn se numără ÎNCRENGĂTURILE, nu speciile; sub Familie se numără GENURILE, nu speciile). NU pune în `[~X]` numărul total de specii din grup — acela este altceva. **Specia nu primește număr.**
+Format:
+Regn *X* [~X]: explicație.
+└─ Încrengătura *X* [~X]: explicație.
+   └─ Clasa *X* [~X]: explicație.
+      └─ Ordinul *X* [~X]: explicație.
+         └─ Familia *X* [~X]: explicație.
+            └─ Genul *X* [~X]: explicație.
+               └─ Specia *X*: explicație.
+Nu repeta instrucțiunile, titlul sau exemplul; livrează direct arborele pentru specia analizată. Nu grupa explicațiile într-un paragraf și nu adăuga informații despre niveluri care nu sunt cerute.
+
+3. **Descriere**
+Oferă un paragraf bogat despre specia în sălbăticie: comportament, ecologie, ciclul de viață, relațiile cu alte organisme și orice particularitate interesantă. Aceasta este secțiunea centrală a profilului: detaliată, enciclopedică, fără a se limita la o singură fotografie.
+
+4. **Răspândire**
+Descrie aria geografică de răspândire a speciei, cu detailii despre regiunile în care este frecventă sau rară.
+
+5. **Dimensiuni**
+Oferă dimensiunile tipice ale speciei (înălțime/lungime, anvergură sau dimensiuni caracteristice), corecte pentru specia în general.
+
+6. **Habitat**
+Descrie tipul de habitat preferat: unde trăiește specia, în ce condiții și în ce regiune topografică.
+
+7. **Fapt divers**
+Menționează un fapt deosebit, surprinzător sau interesant despre specie — ceva particular care o deosebește de celelalte specii înrudite sau care îi conferă o trăsătură unică (mecanism de apărare, adaptare ciudată, relație cu omul, proprietate neașteptată etc.). Dacă nu există un fapt remarcabil cunoscut, scrie „Necunoscut".
+
+8. **Secțiunea specifică categoriei** — alege o singură categorie potrivită speciei și urmează toate subsecțiunile ei. Păsările, insectele, reptilele, amfibienii și mamiferele folosesc secțiunile proprii, nu și secțiunea generală Animale. Stabilește grupa din identitatea taxonomică a speciei, chiar dacă unele grupuri sunt catalogate în aplicație la Animale. Exemplele din paranteze sunt orientative, nu liste exhaustive; folosește numai caractere valabile pentru specie. Pentru o structură absentă scrie „Absent”, pentru un criteriu neaplicabil „Nu se aplică”, iar pentru informații necunoscute „Necunoscut”.
+
+- Pentru **Păsări** — urmează toate subsecțiunile de mai jos:
+  * **Siluetă și postură** — conformația corpului, proporțiile gâtului, aripilor și cozii; postura caracteristică.
+  * **Penaj** — culori, desen și semne distinctive; diferențe între sexe, juvenili și adulți sau între anotimpuri, unde există.
+  * **Cioc** — formă (conic; subțire; curbat; cârligat; turtit; etc.), proporții și adaptare la hrănire.
+  * **Picioare** — lungime, dispunerea degetelor și adaptări (înot; mers; agățare; capturarea prăzii; etc.).
+  * **Zbor și deplasare** — tiparul zborului și deplasarea pe sol ori în apă, după caz.
+  * **Vocalizări** — descrierea cântecului și a strigătelor caracteristice, cu rolul lor; nu inventa transcrieri sonore.
+  * **Hrană** — regim alimentar, resurse principale și modul de procurare; variații sezoniere relevante.
+  * **Cuib** — tip, materiale, amplasare și participarea partenerilor la construcție.
+  * **Ouă și reproducere** — număr tipic de ouă pe pontă, aspect, perioada de reproducere, incubație și îngrijirea puilor; distinge durata incubației de perioada până la părăsirea cuibului.
+  * **Activitate și migrație** — ritm zilnic, comportament social și teritorial; sedentară, migratoare sau parțial migratoare, cu diferențe regionale și perioade orientative.
+
+- Pentru **Plante** — urmează toate subsecțiunile de mai jos:
+  * **Port** (doar dintre: plantă erbaceată; arbust; copac; liană; epifită; parazită; semi-parazită).
+  * **Tulpina** (doar dintre: dreaptă; târâtoare; înaltă; verde; fibrioasă; cilindrică; ramificată; goală; acoperită de peri; etc. — alege ce se potrivește).
+  * **Frunza** — dispoziție (doar dintre: alterne; opuse; în rosetă; bazale; etc.) și formă (doar dintre: simplă; compusă; trifoliată; palmată; penată; etc.) și margine (doar dintre: întreagă; dințată; crenată; lobată; etc.).
+  * **Inflorescență** (doar dintre: umbelă; umbelă compusă; racem; spică; corimb; capitulă; floare solită; paniculă; etc.) — menționează prezența sau absența de **invohicru** și **involucel** dacă e cazul.
+  * **Floare** — petale (doar dintre: cel mult 4; 5; mai mult de 5; reduse; inexistente), simetrie (actinomorfă / zigomorfă), **stil** (număr).
+  * **Ovar** (doar dintre: superior; inferior).
+  * **Fruct** (doar dintre: achenă; capsulă; drupă; bacă; pătașă; siliquă; nucă; samară; pomic; etc.).
+  * **Înflorire** (perioada de înflorire, sub forma „luna start – luna stop").
+  * **Culoarea florii** (doar dintre: roșie; albă; albastră; galbenă; verde/maro; mov; portocaliu — poți indica mai multe, separate prin „;").
+  * **Polenizare** (agenți și mecanisme: insecte; vânt; auto-polenizare; etc.).
+
+- Pentru **Animale** (altele decât păsările, insectele, reptilele, amfibienii și mamiferele) — urmează toate subsecțiunile de mai jos:
+  * **Conformație** — forma corpului, simetrie, segmentare și caractere externe distinctive, în funcție de grupă.
+  * **Acoperire și colorație** — blană, piele, solzi, carapace, cochilie sau alte structuri; desen, variații și dimorfism sexual unde există.
+  * **Cap și organe de simț** — caractere ale ochilor, urechilor, antenelor sau altor organe relevante; adaptări senzoriale cunoscute.
+  * **Membre și deplasare** — număr și tip de membre sau alte structuri locomotorii; mers, înot, târâre, sărit ori zbor, după caz.
+  * **Hrană** — regim alimentar, resurse principale, aparat de hrănire și strategia de procurare a hranei.
+  * **Adăpost** — vizuină, scorbură, refugiu sau alt loc de odihnă; precizează dacă specia nu construiește un adăpost.
+  * **Reproducere** — reproducere sexuată sau asexuată, oviparitate ori viviparitate unde sunt aplicabile; sezon și număr tipic de ouă sau pui.
+  * **Dezvoltare** — stadii ale vieții, metamorfoză unde există, maturizare și îngrijire parentală.
+  * **Activitate și comportament social** — ritm diurn/nocturn, viață solitară sau în grup, teritorialitate și comunicare.
+  * **Sezonalitate și apărare** — migrație, hibernare sau alte forme de repaus, dacă există; mecanisme defensive și adaptări caracteristice.
+
+- Pentru **Amfibieni** — urmează toate subsecțiunile de mai jos; nu include aici reptilele (șerpi, șopârle, broaște țestoase), care primesc secțiunea Reptile:
+  * **Conformație** — forma corpului și segmentarea (cap, trunchi, coadă); diferențele dintre anure (fără coadă) și urodele (cu coadă), unde se aplică.
+  * **Piele și glande** — textură (netedă; aspră; cu negi; etc.), umiditate, colorație și glande caracteristice; adaptează descrierea formei reale a speciei, fără să presupui structuri inexistente.
+  * **Cap și simțuri** — forma capului, gura, ochii și pupila, membrana timpanică unde există; organe senzoriale particulare.
+  * **Membre și deplasare** — numărul și forma membrelor, membrana interdigitală, deplasarea pe sol, în apă sau prin sărituri, după caz; absența membrelor unde există (caeciliene).
+  * **Hrană** — regim alimentar, tip de pradă și modul de capturare, cu limbajul și aparatul bucal caracteristice grupului.
+  * **Reproducere** — ponta (loc, număr orientativ, sezon), amplexul, tipul de ouă; metamorfoză unde există, cu stadiile ei; îngrijire parentală dacă se cunoaște.
+  * **Dezvoltare** — larva (mormolocul), respirația branhiilor la larve și a plămânilor la adulți, stadiile până la adult; neotenia unde există.
+  * **Habitat și activitate** — mediul acvatic și terestru, sezonalitatea apariției, ritm nocturn/diurn și protecția împotriva deshidratării.
+  * **Termoreglare și invernare** — e tototerme; hibernarea ori estivarea unde există și locurile folosite.
+  * **Comportament și protecție** — vocalizările, apărarea (secreții toxice, camuflaj, imobilitate), dimorfismul sexual; statutul de conservare cunoscut, inclusiv specii strict protejate.
+
+- Pentru **Mamifere** — urmează toate subsecțiunile de mai jos; adaptează descrierea formei reale a corpului, fără să presupui structuri inexistente (de exemplu coarne la specii fără):
+  * **Conformație și siluetă** — forma și proporțiile corpului, regiunile anatomice vizibile; adaptări ale grupului.
+  * **Blană și colorație** — părul (lungime, textură, desen), variații sezoniere, diferențe între sexe și vârste, unde există.
+  * **Cap și simțuri** — forma capului și a botului, urechile, ochii; organe de simț particulare (ecolocație, vibrize).
+  * **Structuri distinctive** — coarne, ramuri, colți, scuturi sau alte formațiuni cunoscute, cu diferențele dintre sexe; „Absent” la speciile fără.
+  * **Membre și deplasare** — numărul și tipul membrelor; mers, sărit, înot, săpat sau zbor, după caz; adaptări ale picioarelor și unghiilor.
+  * **Hrană** — regim alimentar, aparat de hrănire (dinți caracteristici unde se cunosc) și strategia de procurare a hranei.
+  * **Reproducere și dezvoltare** — sezonul de împerechere, gestația, numărul orientativ de pui, alăptarea; rata de creștere și independența juvenililor.
+  * **Adăpost și teritoriu** — bârlog, vizuină sau alte refugii; dimensiunea și utilizarea teritoriului, comportament teritorial unde există.
+  * **Activitate și comportament social** — ritm diurn/nocturn, grupuri solitare sau sociale, comunicare; migrație sau hibernare unde există.
+  * **Apărare și protecție** — mecanisme de apărare și camuflaj; statutul de conservare cunoscut, inclusiv specii strict protejate.
+
+- Pentru **Reptile** — urmează toate subsecțiunile de mai jos; nu include aici amfibienii (broaște, tritoni, salamandre), care primesc secțiunea Reptile:
+  * **Conformație și membri** — forma corpului; prezența, numărul și aspectul membrelor, precum și absența lor (șerpi, șopârle fără picioare); lungimea și rolul cozii.
+  * **Solzi și scuturi** — tipul solzilor (netezi; carinați; granulari; etc.) și al scuturilor; diferența dintre rândurile dorsale și ventrale; scuturile capului, unde sunt diagnostice.
+  * **Carapace și plastron** — pentru cheloni: formă, scuturi și mobilitatea lor; pentru celelalte grupuri scrie „Nu se aplică”.
+  * **Cap și ochi** — forma capului, scuturile și orbitele; pupila (rotundă sau verticală) unde se cunoaște; timpanul sau absența lui.
+  * **Colorație și dimorfism** — desen și culori, variații geografice, diferențe între sexe și între juvenili și adulți, unde există.
+  * **Napârlire** — modul și frecvența orientativă a năpârlirii, cu diferențele dintre grupuri (șerpi, șopârle, cheloni, crocodilieni).
+  * **Hrană și capturare** — regim alimentar, aparat bucal și dinți; venin numai la speciile cunoscute ca veninoase, descris funcțional; strategia de vânare.
+  * **Reproducere și dezvoltare** — pontă (loc, număr orientativ de ouă, sezon), incubare; oviparitate sau viviparitate unde există; independența juvenililor.
+  * **Termoreglare și adăpost** — expunerea la soare, locurile de odihnă și refugiu; brumarea (hibernarea) și estivarea unde există.
+  * **Comportament și protecție** — activitate diurnă/nocturnă, teritorialitate, apărare (fuga, mușcătura, camuflajul, autotomia cozii unde există); statutul de conservare cunoscut, inclusiv specii strict protejate.
+
+- Pentru **Insecte** — urmează toate subsecțiunile de mai jos; nu include aici păianjenii sau alte artropode care nu sunt insecte:
+  * **Corp** — cap, torace și abdomen; formă, colorație, desen, pilozitate și caractere distinctive ale adultului.
+  * **Antene** — formă (filiforme; măciucate; pectinate; geniculate; etc.), lungime relativă și diferențe între sexe.
+  * **Aparat bucal** — tip (masticator; înțepător-sugător; sifonant; etc.) și adaptarea la hrănire.
+  * **Aripi și elitre** — număr, structură, nervațiune sau desen relevant; elitre, hemielitre ori balansiere unde există; absența aripilor, după caz.
+  * **Picioare** — cele trei perechi toracice ale adultului și specializările lor (mers; sărit; săpat; înot; prinderea prăzii; etc.); distinge picioarele larvare de pseudopode.
+  * **Ouă și reproducere** — aspectul ouălor, locul depunerii, sezonul și particularitățile reproductive cunoscute.
+  * **Metamorfoză** — completă sau incompletă; descrie larva și pupa ori nimfa, după caz, fără să atribui stadii inexistente speciei.
+  * **Hrană și organisme asociate** — hrana adultului separat de cea a larvei/nimfei; plante-gazdă, pradă sau gazde parazitate, numai dacă sunt cunoscute.
+  * **Activitate și sezonalitate** — perioadele de apariție a adulților, ritm zilnic, număr de generații și stadiul de iernare; precizează variațiile geografice.
+  * **Comportament și rol ecologic** — viață solitară/socială, comunicare și apărare; rol de polenizator, prădător, descompunător sau fitofag, după caz.
+
+- Pentru **Ciuperci** — urmează toate subsecțiunile de mai jos; adaptează descrierea formei reale a corpului fructifer, fără să presupui că toate speciile au pălărie și picior:
+  * **Corp fructifer** — formă generală (cu pălărie și picior; consolă; cupă; globulos; ramificat; resupinat; etc.) și mod de creștere (izolat; grupat; în tufe; etc.).
+  * **Pălărie sau suprafață superioară** — formă, culoare, textură, margine și modificări la maturizare ori în funcție de umiditate, când structura există.
+  * **Suprafață fertilă** — lamele, tuburi/pori, țepi, suprafață netedă sau altă structură; culoare, dispunere și raportul cu piciorul, dacă se aplică.
+  * **Picior** — poziție, formă, suprafață, consistență și bază; menționează absența lui când este cazul.
+  * **Văl, inel și volvă** — prezență sau absență, aspect și persistență; nu confunda resturile de văl cu alte structuri.
+  * **Carne și miros** — culoare, consistență, schimbări la lezare și latex unde există; miros caracteristic cunoscut, fără recomandări de gustare.
+  * **Spori** — culoarea amprentei sporale și caractere microscopice diagnostice cunoscute; distinge observațiile microscopice de cele vizibile cu ochiul liber.
+  * **Substrat și nutriție** — sol, litieră, lemn sau alt substrat; saprotrofie, parazitism ori asociere micorizantă; gazde/parteneri cunoscuți.
+  * **Fructificare** — perioada orientativă și condițiile naturale favorabile apariției corpurilor fructifere, cu variații climatice și regionale.
+  * **Confuzii și siguranță** — specii asemănătoare și caractere diferențiale, mai ales față de cele toxice; precizează că profilul generat și fotografiile nu confirmă siguranța pentru consum. Nu recomanda consumul sau gustarea; verificarea de către un specialist este necesară.
+
+Reguli:
+* Nu adăuga alte secțiuni în afara celor enumerate.
+* Nu repeta aceeași informație în mai multe secțiuni.
+* Acest profil este la nivel de specie: informațiile vor fi valabile pentru specia în general, nu pentru o observație anume.
+* Dacă numele populare într-o limbă nu este cunoscut, scrie „—" în locul lui.
+* Dacă o informație nu este cunoscută pentru specia, scrie explicit „Necunoscut" în loc să inventezi.

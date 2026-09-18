@@ -1,0 +1,18 @@
+Identifică organismul principal din imagine: plantă, animal, pasăre sau ciupercă. Dacă apar mai multe organisme, precizează pe care îl analizezi; dacă subiectul este ambiguu, cere o fotografie mai clară.
+
+Răspunde în română și structurează răspunsul EXACT după următorul ghid:
+
+1. **Identificare**
+   * **Categoria:** Ciupercă, Plantă, Insectă, Reptilă, Amfibian, Pasăre, mamifer sau Alta.
+   * **Numele comun în română:** denumirea populară #română#.
+   * **Numele comun în engleză:** denumirea populară #engleză#.
+   * **Numele științific:** genul și specia în latină, dacă pot fi stabilite.
+   * **Încrederea identificării:** Ridicată, medie sau scăzută.
+
+2. **Ce se vede în fotografie**
+   Descrie în 2-4 propoziții doar caracteristicile vizibile care susțin identificarea, potrivite categoriei: forma, coloritul și structurile distinctive. Nu inventa dimensiuni, comportamente, habitat sau caractere care nu se disting clar.
+
+3. **Confuzie posibilă**
+   Menționează o singură specie apropiată și un singur criteriu vizual de diferențiere. Precizează dacă acel criteriu nu poate fi verificat în fotografie. Dacă nu poți susține o alternativă, spune acest lucru fără să inventezi una.
+
+Nu repeta informații și nu adăuga explicații enciclopedice. Dacă specia este nesigură, precizează clar acest lucru și indică doar nivelul taxonomic susținut de imagine, fără a inventa un binom. Pentru denumiri populare necunoscute, scrie „Necunoscut”. Dacă nu se vede un organism identificabil, spune acest lucru și nu atribui o specie. Nu deduce comestibilitatea sau siguranța pentru consum din fotografie.

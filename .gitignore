@@ -1,0 +1,74 @@
+# Cache-uri locale (Catalogue of Life, taxonomy cataloage)
+col/*.zip
+col/taxonomy.db
+col/build.log
+col/build2.log
+col/build.err.log
+
+# Baza de date a catalogului de imagini (generată local la prima rulare)
+output/catalog.db
+
+# Rezultate locale de analiză (imagini copiate + descrieri)
+output/plante/
+output/pasari/
+output/animale/
+output/ciuperci/
+output/altele/
+output/*_description.txt
+
+# PDF-uri cu cărți/dicționare (copyright, prea mari pentru GitHub)
+name_sources/*.pdf
+
+# Excel-uri de lucru cu denumiri (generate local / personale)
+tools/denumiri_*.xlsx
+denumiri_*.xlsx
+
+# Scripturi temporare de lucru
+_*.py
+_verify_*.py
+_smoke_*.py
+
+# Local development and maintenance utilities (not distributed by default)
+/tools/local_dev/
+
+# Source-only distribution: local data must never be committed
+# (input/ își ignoră conținutul prin propriul .gitignore imbricat)
+/output/
+/logs/
+# (name_sources/ își ignoră conținutul prin propriul .gitignore imbricat)
+*.db
+*.db-*
+*.db.*
+*.sqlite
+*.sqlite-*
+*.sqlite.*
+*.sqlite3
+*.sqlite3-*
+*.sqlite3.*
+*.pdf
+*.zip
+*.7z
+*.rar
+*.xlsx
+*.xls
+*.jpg
+*.jpeg
+*.png
+*.webp
+*.tif
+*.tiff
+*.bmp
+*.heic
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.log
+*.bak
+*.backup
+*.tmp
+.vscode/
+.idea/
+.qodo/
+

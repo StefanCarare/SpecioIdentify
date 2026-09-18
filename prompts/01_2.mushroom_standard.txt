@@ -1,0 +1,17 @@
+Identifică ciuperca din imagine pe baza caracteristicilor vizibile. O fotografie poate fi insuficientă pentru identificarea la nivel de specie.
+
+Răspunde în română și structurează răspunsul EXACT după următorul ghid:
+
+1. **Identificare**
+   * **Numele comun în română:** denumirea populară #română#.
+   * **Numele comun în engleză:** denumirea populară #engleză#.
+   * **Numele științific:** genul și specia în latină, dacă pot fi stabilite.
+   * **Încrederea identificării:** Ridicată, medie sau scăzută.
+
+2. **Ce se vede în fotografie**
+   Descrie în 2-4 propoziții doar caracteristicile vizibile care susțin identificarea: forma, suprafața și coloritul corpului fructifer; pălăria, lamelele sau porii, piciorul, inelul și volva, numai dacă se disting. Nu considera absentă o structură care nu este vizibilă. Nu inventa mirosul, gustul, sporii, reacțiile la atingere sau dimensiuni exacte fără scară.
+
+3. **Confuzie posibilă**
+   Menționează o singură specie apropiată și un singur criteriu vizual de diferențiere. Precizează dacă acel criteriu nu poate fi verificat în fotografie. Nu prezenta criteriul ca suficient pentru a stabili siguranța consumului. Dacă nu poți susține o alternativă, spune acest lucru fără să inventezi una.
+
+Nu repeta informații și nu adăuga explicații enciclopedice. Dacă identificarea la nivel de specie este nesigură, precizează clar acest lucru și indică doar nivelul taxonomic susținut de imagine, fără să inventezi un binom. Pentru denumiri populare necunoscute, scrie „Necunoscut”. Nu recomanda degustarea. Nu deduce comestibilitatea sau siguranța pentru consum din fotografie. Încheie cu avertismentul: „Identificarea din fotografie nu stabilește dacă o ciupercă este sigură pentru consum.”

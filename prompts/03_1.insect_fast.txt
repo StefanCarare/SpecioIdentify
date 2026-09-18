@@ -1,0 +1,3 @@
+Identifică insecta din imagine.
+Răspunde doar cu genul și specia în latină, dacă pot fi stabilite din caracteristicile vizibile.
+Nu oferi explicații. Dacă specia nu poate fi stabilită sau subiectul nu este o insectă, răspunde „Identificare nesigură”, fără să inventezi un binom.
