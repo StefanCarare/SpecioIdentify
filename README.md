@@ -33,32 +33,33 @@ A Python application for analyzing images using local AI models (Ollama). Featur
    - Pull a vision model: `ollama pull muse-glimmer` or `ollama pull qwen3-vl:8b`
    - Start Ollama server: `ollama serve`
 
-## Instalare de la zero (după `git clone`)
+## Fresh install (after `git clone`)
 
 ```bash
-pip install -r requirements.txt   # Pillow, requests, piexif (+ openpyxl, pymupdf pentru Administrare)
-python -m gui.main_window         # sau run.bat pe Windows
+pip install -r requirements.txt   # Pillow, requests, piexif (+ openpyxl, pymupdf for Administration)
+python -m gui.main_window         # or run.bat on Windows
 ```
 
-La prima pornire aplicația face singură pașii care nu necesită date externe:
-`output/catalog.db` se creează automat, iar prompturile din `prompts/*.txt`
-se importă în baza de date. Dacă lipsește ceva ce necesită descărcare
-manuală (arhiva CoL, `taxonomy.db`, denumirile populare), apare **un singur
-popup** „Configurare inițială" cu pașii exacți + opțiunea de a deschide
-secțiunea **Administrare**. Detalii complete în [`col/README.md`](col/README.md).
+On first launch the app performs by itself every step that does not require
+external data: `output/catalog.db` is created automatically, and the prompts in
+`prompts/*.txt` are imported into the database. If something that needs a manual
+download is missing (the CoL archive, `taxonomy.db`, the vernacular names), a
+**single popup** "Initial setup" appears with the exact steps plus the option to
+open the **Administration** section. Full details in
+[`col/README.md`](col/README.md).
 
-Reconstrucție completă a datelor locale (ordinea din Administrare):
-1. 🔄 **Reconstruiește taxonomy.db** (~2-3 min, necesită arhiva `.zip` în `col/`)
-2. 🌐 **Import denumiri din CoL** (~2 min)
-3. 📥 **Adaugă denumiri din Excel** (opțional, cu draftul revizuit)
+Full rebuild of the local data (in the order shown in Administration):
+1. 🔄 **Rebuild taxonomy.db** (~2-3 min, requires the `.zip` archive in `col/`)
+2. 🌐 **Import names from CoL** (~2 min)
+3. 📥 **Add names from Excel** (optional, with the reviewed draft)
 
-Dacă distribuția include utilitarele de dezvoltare (`-IncludeDevTools` la export),
-scriptul opțional de resetare poate elimina datele locale regenerabile.
-**Faceți backup înainte: resetarea șterge inclusiv catalogul și fotografiile din Output.**
-Scriptul nu este inclus în distribuția minimă și nu este necesar pentru utilizarea aplicației.
+If the distribution includes the development utilities (`-IncludeDevTools` at
+export), the optional reset script can remove the regenerable local data.
+**Back up first: the reset deletes the catalog and the photos in Output as well.**
+The script is not part of the minimal distribution and is not required to use the app.
 ```bash
-python tools/local_dev/reset_clean.py --dry-run   # previzualizare
-python tools/local_dev/reset_clean.py             # ștergere cu confirmare
+python tools/local_dev/reset_clean.py --dry-run   # preview
+python tools/local_dev/reset_clean.py             # delete with confirmation
 ```
 
 ## Configuration
@@ -92,9 +93,9 @@ To create a shortcut on your Desktop for easy access:
 1. Right-click on your Desktop and select **New** → **Shortcut**
 2. In the "Type the location of the item" field, enter:
    ```
-   C:\path\to\appAI\run.bat
+   C:\path\to\SpecioIdentify\run.bat
    ```
-   (Replace `C:\path\to\appAI\` with the actual installation path. The application folder does not need to be renamed.)
+   (Replace `C:\path\to\SpecioIdentify\` with the actual installation path. The folder does not have to be named `SpecioIdentify`.)
 3. Click **Next**
 4. Name the shortcut "Specio Identify" and click **Finish**
 5. (Optional) Right-click the shortcut → **Properties** → **Change Icon** to select a custom icon
@@ -122,7 +123,7 @@ python app.py input/image.jpg prompts/custom.txt
 ## Project Structure
 
 ```
-appAI/
+SpecioIdentify/
 ├── app.py              # CLI interface
 ├── config/             # Configuration files
 │   └── settings.txt    # Application settings

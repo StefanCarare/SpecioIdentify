@@ -1,5 +1,5 @@
-# Acest folder este destinat cărților/dicționarelor PDF folosite la
-# „Extract denumiri din PDF" (Administrare). PDF-urile tale (copyright,
-# dimensiuni mari) nu intră în Git:
+# This folder is meant for the PDF books/dictionaries used by
+# "Extract names from PDF" (Administration). Your PDFs (copyright,
+# large files) must not enter Git:
 *
 !.gitignore
