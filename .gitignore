@@ -1,14 +1,14 @@
-# Cache-uri locale (Catalogue of Life, taxonomy cataloage)
+# Local caches (Catalogue of Life, taxonomy databases)
 col/*.zip
 col/taxonomy.db
 col/build.log
 col/build2.log
 col/build.err.log
 
-# Baza de date a catalogului de imagini (generată local la prima rulare)
+# Image catalog database (generated locally on first run)
 output/catalog.db
 
-# Rezultate locale de analiză (imagini copiate + descrieri)
+# Local analysis results (copied images + descriptions)
 output/plante/
 output/pasari/
 output/animale/
@@ -16,14 +16,14 @@ output/ciuperci/
 output/altele/
 output/*_description.txt
 
-# PDF-uri cu cărți/dicționare (copyright, prea mari pentru GitHub)
+# Books/dictionaries as PDF (copyright, too large for GitHub)
 name_sources/*.pdf
 
-# Excel-uri de lucru cu denumiri (generate local / personale)
+# Working Excel files with names (generated locally / personal)
 tools/denumiri_*.xlsx
 denumiri_*.xlsx
 
-# Scripturi temporare de lucru
+# Temporary working scripts
 _*.py
 _verify_*.py
 _smoke_*.py
@@ -32,10 +32,10 @@ _smoke_*.py
 /tools/local_dev/
 
 # Source-only distribution: local data must never be committed
-# (input/ își ignoră conținutul prin propriul .gitignore imbricat)
+# (input/ ignores its own content via its nested .gitignore)
 /output/
 /logs/
-# (name_sources/ își ignoră conținutul prin propriul .gitignore imbricat)
+# (name_sources/ ignores its own content via its nested .gitignore)
 *.db
 *.db-*
 *.db.*

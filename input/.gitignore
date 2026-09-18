@@ -1,7 +1,7 @@
-# Acest folder este destinat fotografiilor de analizat
-# (dialogul „Add Images" îl deschide direct).
+# This folder is meant for the photos you want to analyze
+# (the "Add Images" dialog opens it directly).
 #
-# Regula de mai jos păstrează folderul în Git, dar ignoră
-# orice conținut (fotografiile tale rămân locale):
+# The rule below keeps the folder in Git but ignores
+# any content (your photos stay local):
 *
 !.gitignore
