@@ -5220,7 +5220,9 @@ class MainWindow:
 
         ttk.Label(info_frame, text=t("lbl_category")).grid(row=0, column=0, sticky="w", padx=8, pady=2)
         cat_combo = ttk.Combobox(info_frame, textvariable=cat_var,
-                                 values=["Planta", "Animal", "Pasare", "Ciuperca", "Alta"],
+                                 values=["Plant", "Mushroom", "Insect", "Arachnid", "Mollusc",
+                                         "Fish", "Reptile", "Amphibian", "Bird", "Mammal",
+                                         "Animal", "Other"],
                                  state="readonly", width=12)
         cat_combo.grid(row=0, column=1, sticky="w", padx=4, pady=2)
 
@@ -5261,9 +5263,9 @@ class MainWindow:
 
         # Mapping kingdom (taxonomy.db) → categorie (dropdown)
         _KINGDOM_MAP = {
-            "plantae": "Planta",
+            "plantae": "Plant",
             "animalia": "Animal",
-            "fungi": "Ciuperca",
+            "fungi": "Mushroom",
         }
 
         def _kingdom_to_category(kingdom: str) -> str:
@@ -5273,8 +5275,8 @@ class MainWindow:
                     return val
             # fallback: detectează din pasare/bird
             if "pasar" in k or "bird" in k:
-                return "Pasare"
-            return "Alta"
+                return "Bird"
+            return "Other"
 
         def validate_current():
             """Validează numele curent din entry (la Enter sau focus out)."""
@@ -5331,21 +5333,12 @@ class MainWindow:
                 messagebox.showwarning(t("qc_title"), t("qc_choose_category"), parent=win)
                 return
 
-            # Mapare nume categorie → folder (consistent cu catalogize_analysis)
-            _CAT_TO_FOLDER = {
-                "Planta": "plante",
-                "Animal": "animale",
-                "Pasare": "pasari",
-                "Ciuperca": "ciuperci",
-                "Alta": "altele",
-            }
-            folder_category = _CAT_TO_FOLDER.get(category, "altele")
-
             try:
-                result = quick_catalog_images(selected, scientific, folder_category, OUTPUT_DIR)
+                result = quick_catalog_images(selected, scientific, category, OUTPUT_DIR)
                 copied = result["copied"]
                 errors = result["errors"]
-                dest_folder = OUTPUT_DIR / folder_category / scientific.replace(" ", "_").replace("×", "x").lower()
+                from core.catalog import _category_folder as _qc_folder
+                dest_folder = OUTPUT_DIR / _qc_folder(category) / scientific.replace(" ", "_").replace("×", "x").lower()
                 msg = t("qc_result_msg").format(n=copied, folder=dest_folder)
                 if errors:
                     msg += f"\n\nErori ({len(errors)}):\n" + "\n".join(errors[:5])
@@ -5837,7 +5830,7 @@ class MainWindow:
             ttk.Label(form, text=label).pack(anchor="w", padx=12, pady=(8 if idx == 0 else 4, 0))
             initial = item.get(key, "") or ""
             if key == "category":
-                initial = initial or "plante"
+                initial = initial or "Plant"
             entry = ttk.Entry(form, width=50)
             entry.insert(0, initial)
             entry.pack(padx=12, pady=2)

@@ -282,8 +282,9 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "Select the PDF (dictionary/book of common names)",
     },
     # ---- Quick Catalog dialog ----
-    # Notă: valorile categoriei (Planta/Animal/Pasare/Ciuperca/Alta) NU se
-    # traduc — sunt chei de date (mappate pe foldere + salvate în catalog).
+    # Notă: valorile categoriei (Plant/Mushroom/Insect/Reptile/Amphibian/
+    # Bird/Mammal/Animal/Other) NU se traduc — sunt chei de date
+    # (mappate pe foldere + salvate în catalog).
     "qc_title": {"ro": "Catalog rapid", "en": "Quick Catalog"},
     "qc_no_images": {"ro": "Adaugă mai întâi imagini.", "en": "Add images first."},
     "qc_selected_image": {
@@ -341,8 +342,8 @@ STRINGS: dict[str, dict[str, str]] = {
     "qc_catalog_btn": {"ro": "📁 Catalogează", "en": "📁 Catalogue"},
     # Formular Update Species
     "form_category_hint": {
-        "ro": "Categorie (Planta, Animal, Pasare, Ciuperca sau Alta):",
-        "en": "Category (Plant, Animal, Bird, Mushroom or Other):"
+        "ro": "Categorie (Plant, Mushroom, Insect, Arachnid, Mollusc, Fish, Reptile, Amphibian, Bird, Mammal, Animal sau Other):",
+        "en": "Category (Plant, Mushroom, Insect, Arachnid, Mollusc, Fish, Reptile, Amphibian, Bird, Mammal, Animal or Other):"
     },
     "form_scientific_example": {
         "ro": "Nume științific corect (ex. Duchesnea indica):",

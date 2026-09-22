@@ -166,12 +166,12 @@ def build_cache(zip_path=None, db_path=None, progress=None):
         con.close()
     return {"rows": rows, "accepted": accepted}
 
-def lookup_catalog_category(scientific_name, db_path=None):
+def lookup_catalog_group(scientific_name, db_path=None):
     """Resolve an exact, unique species locally; never scan archives or create a DB."""
     name = (scientific_name or "").strip()
     db = Path(db_path) if db_path else TAXONOMY_DB
     if not name or not db.is_file():
-        return "Alta"
+        return "Other"
     # The fast parser supplies a canonical binomial. Exact equality uses idx_taxa_name.
     name = name[0].upper() + name[1:]
     try:
@@ -184,7 +184,7 @@ def lookup_catalog_category(scientific_name, db_path=None):
                 (name,),
             ).fetchall()
             if len(rows) != 1:
-                return "Alta"
+                return "Other"
             row = rows[0]
             kingdom = (row["lineage_kingdom"] or "").strip().lower()
             tax_class = (row["lineage_class"] or "").strip().lower()
@@ -198,16 +198,47 @@ def lookup_catalog_category(scientific_name, db_path=None):
                         else:
                             tax_class = parent["name"].strip().lower()
             if kingdom == "plantae":
-                return "Planta"
+                return "Plant"
             if kingdom == "fungi":
-                return "Ciuperca"
-            if kingdom == "animalia" and tax_class:
-                return "Pasare" if tax_class == "aves" else "Animal"
-            return "Alta"
+                return "Mushroom"
+            if kingdom == "animalia":
+                if not tax_class:
+                    return "Animal"
+                if tax_class == "aves":
+                    return "Bird"
+                if tax_class == "mammalia":
+                    return "Mammal"
+                if tax_class == "reptilia":
+                    return "Reptile"
+                if tax_class == "amphibia":
+                    return "Amphibian"
+                if tax_class == "insecta":
+                    return "Insect"
+                if tax_class == "arachnida":
+                    return "Arachnid"
+                if tax_class in ("gastropoda", "bivalvia", "cephalopoda",
+                                 "polyplacophora", "scaphopoda"):
+                    return "Mollusc"
+                if tax_class in ("teleostei", "chondrichthyes", "actinopterygii",
+                                 "elasmobranchii", "myxini", "petromyzontida",
+                                 "sarcopterygii", "dipnoi", "coelacanthiformes",
+                                 "chondrostei", "holostei"):
+                    return "Fish"
+                if tax_class in ("malacostraca", "diplopoda",
+                                 "chilopoda", "clitellata", "hirudinea",
+                                 "polychaeta", "echinoidea", "asteroidea"):
+                    return "Animal"
+                return "Animal"
+            return "Other"
         finally:
             con.close()
     except (sqlite3.Error, OSError):
-        return "Alta"
+        return "Other"
+
+
+def lookup_catalog_category(scientific_name, db_path=None):
+    """Backward-compatible alias returning the canonical catalog group."""
+    return lookup_catalog_group(scientific_name, db_path=db_path)
 
 
 

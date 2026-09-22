@@ -8,7 +8,7 @@ import unicodedata
 from pathlib import Path
 
 from core.database import connect
-from core.taxonomy import lookup_catalog_category
+from core.taxonomy import lookup_catalog_group
 from core.catalog_paths import (
     store_catalog_path, store_original_path, resolve_catalog_path, resolved_catalog_item,
 )
@@ -62,7 +62,7 @@ La finalul răspunsului adaugă acest marker și apoi un singur obiect JSON vali
 Nu pune Markdown în obiectul JSON. Folosește exact aceste câmpuri standard:
 category, kingdom, genus, species, scientific_name, ro_name, en_name,
 confidence, is_uncertain.
-`category` trebuie să fie una dintre: Planta, Animal, Pasare, Ciuperca, Alta.
+`category` trebuie să fie una dintre: Plant, Mushroom, Insect, Reptile, Amphibian, Bird, Mammal, Animal, Other.
 `confidence` este un număr între 0 și 1. Dacă o valoare nu poate fi stabilită,
 folosește null. Câmpurile suplimentare specifice acestui prompt pot fi adăugate
 în obiect, dar nu elimina câmpurile standard.
@@ -136,7 +136,7 @@ plus `category`.
 Pentru Păsări adaugă și: {", ".join(SPECIES_PROFILE_FIELDS_BIRD)}.
 Pentru Plante adaugă și: {", ".join(SPECIES_PROFILE_FIELDS_PLANT)}.
 Pentru Animale adaugă și: {", ".join(SPECIES_PROFILE_FIELDS_ANIMAL)}.
-`category` trebuie să fie una dintre: Planta, Animal, Pasare, Ciuperca, Alta.
+`category` trebuie să fie una dintre: Plant, Mushroom, Insect, Reptile, Amphibian, Bird, Mammal, Animal, Other.
 Dacă o valoare nu poate fi stabilită pentru această specie sau nu este relevantă
 pentru categorie, folosește null. Nu elimina câmpurile comune; pe lângă ele,
 poți adăuga și altele utile pentru cineva care întâlnește specia pe teren.
@@ -363,17 +363,82 @@ def _safe_part(value: object, fallback: str) -> str:
     return value or fallback
 
 
+CANONICAL_GROUPS = (
+    "plant",
+    "mushroom",
+    "insect",
+    "arachnid",
+    "mollusc",
+    "fish",
+    "reptile",
+    "amphibian",
+    "bird",
+    "mammal",
+)
+
+GROUP_DISPLAY = {
+    "plant": "Plant",
+    "mushroom": "Mushroom",
+    "insect": "Insect",
+    "arachnid": "Arachnid",
+    "mollusc": "Mollusc",
+    "fish": "Fish",
+    "reptile": "Reptile",
+    "amphibian": "Amphibian",
+    "bird": "Bird",
+    "mammal": "Mammal",
+}
+
+
+def preset_group(preset_name: str | None) -> str:
+    """Derive the canonical prompt group from a preset file name.
+
+    `02_1.plant_fast.txt` -> `plant`. The generic `default` presets carry
+    no group, so an empty string is returned and the caller must resolve
+    the group from the taxonomy instead.
+    """
+    name = normalize_preset_name(preset_name)
+    legacy = {
+        "botanic": "plant", "flower": "plant",
+        "fungi": "mushroom",
+        "reptil": "reptile", "amfibian": "amphibian",
+        "animal": "mammal",
+    }
+    for token in re.findall(r"[a-z]+", name):
+        if token == "default":
+            return ""
+        if token in GROUP_DISPLAY:
+            return token
+        if token in legacy:
+            return legacy[token]
+    return ""
+
+
 def _category_folder(category: object) -> str:
     value = str(category or "Alta").strip().casefold()
     if "plant" in value:
-        return "plante"
+        return "Plant"
     if "pas" in value or "bird" in value:
-        return "pasari"
+        return "Bird"
+    if "arach" in value:
+        return "Arachnid"
+    if "mollusc" in value or "molus" in value:
+        return "Mollusc"
+    if "insect" in value:
+        return "Insect"
+    if "fish" in value or "pest" in value or "pisc" in value:
+        return "Fish"
+    if "reptil" in value:
+        return "Reptile"
+    if "amphib" in value or "amfib" in value:
+        return "Amphibian"
+    if "mammal" in value or "mamif" in value:
+        return "Mammal"
     if "animal" in value:
-        return "animale"
-    if "ciuper" in value or "fung" in value:
-        return "ciuperci"
-    return "altele"
+        return "Animal"
+    if "ciuper" in value or "fung" in value or "mushroom" in value:
+        return "Mushroom"
+    return "Other"
 
 
 def is_fast_preset(value: str | None) -> bool:
@@ -382,7 +447,14 @@ def is_fast_preset(value: str | None) -> bool:
 
 
 def fast_analysis_fields(response: str, preset_name: str) -> dict:
-    """Parse a short binomial locally, without assuming every organism is a plant."""
+    """Parse a short binomial locally, taxonomy first, preset group as fallback.
+
+    The taxonomy database is the single source of truth for the category:
+    the preset group is only used when the species is missing, ambiguous,
+    or the database is unavailable. A mismatch between the preset intent
+    and the taxonomic group is recorded in `group_mismatch` instead of
+    silently picking one side.
+    """
     raw = str(preset_name or "").strip().casefold()
     if raw.endswith(".txt"):
         raw = raw[:-4]
@@ -393,26 +465,22 @@ def fast_analysis_fields(response: str, preset_name: str) -> dict:
     if not match or match.group(1).lower() in {"unknown", "identificare", "identification"}:
         return {}
     genus, species = match.groups()
-    categories = {
-        "botanic": "Planta", "plant": "Planta", "flower": "Planta",
-        "bird": "Pasare", "animal": "Animal", "insect": "Animal",
-        "reptile": "Animal", "reptil": "Animal",
-        "amphibian": "Animal", "amfibian": "Animal", "mammal": "Animal",
-        "fungi": "Ciuperca", "mushroom": "Ciuperca",
-    }
-    category = "Alta"
-    for token in re.findall(r"[a-z]+", name):
-        if token == "default":
-            category = lookup_catalog_category(f"{genus} {species}")
-            break
-        if token in categories:
-            category = categories[token]
-            break
+    taxonomic = lookup_catalog_group(f"{genus} {species}")
+    group = preset_group(preset_name)
+    intended = GROUP_DISPLAY[group] if group else ""
+    if taxonomic in ("Other", "Animal"):
+        # Baza nu știe sau nu e suficient de fină: folosim intenția din preset.
+        category = intended or taxonomic
+    else:
+        category = taxonomic
+    mismatch = bool(intended and intended != category)
     return {
         "category": category,
         "scientific_name": f"{genus} {species}", "genus": genus, "species": species,
         "ro_name": None, "en_name": None, "confidence": None,
         "is_uncertain": False,
+        "group_mismatch": mismatch,
+        "intended_group": intended or None,
     }
 
 
@@ -1101,7 +1169,7 @@ def quick_catalog_images(
 
     output_dir = Path(output_dir)
     scientific_name = (scientific_name or "").strip()
-    category = (category or "altele").strip().casefold()
+    category = _category_folder(category)
 
     if not scientific_name:
         raise ValueError("Numele stiintific nu poate fi gol.")
