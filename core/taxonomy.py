@@ -178,14 +178,19 @@ def lookup_catalog_group(scientific_name, db_path=None):
         con = sqlite3.connect(db.resolve().as_uri() + "?mode=ro", uri=True)
         con.row_factory = sqlite3.Row
         try:
+            # Only the name belongs in the WHERE clause. Adding `rank = 'species'`
+            # makes SQLite prefer idx_taxa_rank and scan millions of rows on every
+            # call (measured ~0.75 s); idx_taxa_name answers in under a millisecond.
             rows = con.execute(
                 "SELECT id, parent_id, name, rank, lineage_kingdom, lineage_class"
-                " FROM taxa WHERE name = ? AND rank = 'species' LIMIT 2",
+                " FROM taxa WHERE name = ? LIMIT 6",
                 (name,),
             ).fetchall()
-            if len(rows) != 1:
+            species = [r for r in rows
+                       if str(r["rank"] or "").strip().lower() == "species"]
+            if len(species) != 1:
                 return "Other"
-            row = rows[0]
+            row = species[0]
             kingdom = (row["lineage_kingdom"] or "").strip().lower()
             tax_class = (row["lineage_class"] or "").strip().lower()
             if not kingdom or (kingdom == "animalia" and not tax_class):
