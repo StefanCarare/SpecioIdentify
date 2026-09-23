@@ -2,6 +2,8 @@ from pathlib import Path
 import json
 import os
 import re
+import webbrowser
+from urllib.parse import quote
 
 
 _DIA = {"ă":"a","â":"a","î":"i","ș":"s","ş":"s","ț":"t","ţ":"t","Ă":"a","Â":"a","Î":"i","Ș":"s","Ş":"s","Ț":"t","Ţ":"t"}
@@ -148,6 +150,13 @@ APP_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_DIR = APP_ROOT / "config"
 OUTPUT_DIR = APP_ROOT / "output"
 PROMPTS_DIR = APP_ROOT / "prompts"
+
+# ----------------------------------------------------
+# Web lookups — verificarea externă a speciei identificate
+# ----------------------------------------------------
+
+COL_SEARCH_URL = "https://www.catalogueoflife.org/data/search"
+WIKIPEDIA_SPECIES_URL = "https://en.wikipedia.org/wiki/"
 
 ROMANIAN_COUNTIES = [
     "Alba",
@@ -1029,6 +1038,33 @@ class MainWindow:
             state="disabled"
         )
         self.update_species_button.pack(side="left", padx=(8, 0))
+
+        # ----------------------------------------------------
+        # Grup mijloc: verificare web (CoL + Wikipedia)
+        # ----------------------------------------------------
+
+        web_buttons = ttk.Frame(button_frame)
+        web_buttons.pack(side="left", padx=(16, 0))
+
+        # Câmp editabil: se preumplește cu specia curentă, dar primește
+        # și alternative scrise de utilizator (ex. un sinonim de verificat).
+        self.web_entry = ttk.Entry(web_buttons, width=20)
+        self.web_entry.pack(side="left")
+
+        self.col_button = ttk.Button(
+            web_buttons,
+            text=t("btn_open_col"),
+            command=self.open_col_page
+        )
+        self.col_button.pack(side="left", padx=(6, 0))
+
+        # Mereu activ: căutarea nu depinde de starea catalogului.
+        self.wikipedia_button = ttk.Button(
+            web_buttons,
+            text=t("btn_open_wikipedia"),
+            command=self.open_wikipedia_page
+        )
+        self.wikipedia_button.pack(side="left", padx=(6, 0))
 
         # ----------------------------------------------------
         # Grup dreapta: fluxul SPECIES PROFILE
@@ -2712,6 +2748,7 @@ class MainWindow:
         state = "disabled"
         profile_state = "disabled"
         load_profile_state = "disabled"
+        web_name = ""
 
         if self.image_path is not None:
             try:
@@ -2721,6 +2758,8 @@ class MainWindow:
                     scientific_name = (item.get("scientific_name") or "").strip()
                     if scientific_name and scientific_name not in ("Necunoscut", "Unknown"):
                         profile_state = "normal"
+                        # Câmpul de căutare web urmează specia curentă.
+                        web_name = scientific_name
 
                         # LOAD PROFILE activ doar dacă există deja
                         # un profil salvat în baza de date.
@@ -2731,6 +2770,14 @@ class MainWindow:
 
         self.open_species_button.configure(state=state)
         self.update_species_button.configure(state=state)
+        # Sincronizează câmpul de căutare (specie nouă selectată /
+        # reanalyzată); textul scris manual se înlocuiește la schimbarea
+        # contextului — utilizatorul îl poate reintroduce.
+        try:
+            self.web_entry.delete(0, "end")
+            self.web_entry.insert(0, web_name)
+        except Exception:
+            pass
         self.generate_profile_button.configure(state=profile_state)
         self.generate_all_profiles_button.configure(
             state="normal" if self.image_paths else "disabled"
@@ -5109,6 +5156,17 @@ class MainWindow:
         buttons = ttk.Frame(dlg)
         buttons.pack(fill="x", padx=12, pady=(0, 12))
 
+        # Verificare web a numelui respins — disponibilă IMEDIAT, fără
+        # să închizi dialogul (fereastra principală e blocată de grab_set).
+        ttk.Button(
+            buttons, text=t("btn_open_col"),
+            command=lambda: self._browse_col_for(name)
+        ).pack(side="left")
+        ttk.Button(
+            buttons, text=t("btn_open_wikipedia"),
+            command=lambda: self._browse_wikipedia_for(name)
+        ).pack(side="left", padx=(6, 0))
+
         if accepted:
             def on_update() -> None:
                 dlg.destroy()
@@ -5191,6 +5249,56 @@ class MainWindow:
             messagebox.showwarning("Catalog", "Folderul catalogului nu mai există.")
             return
         os.startfile(str(folder))
+
+    def _web_search_name(self) -> str:
+        """Numele din căutarea web (câmp editabil), cu fallback pe catalog."""
+        name = ""
+        try:
+            name = self.web_entry.get().strip()
+        except Exception:
+            pass
+        if not name and self.image_path is not None:
+            try:
+                item = get_catalog_item(self.image_path, OUTPUT_DIR) or {}
+                name = (item.get("scientific_name") or "").strip()
+            except Exception:
+                name = ""
+        return name
+
+    def _browse_col_for(self, name: str) -> None:
+        """Deschide pagina de căutare CoL și copiază numele în clipboard.
+
+        Site-ul CoL nu acceptă query în URL, deci numele (oricum căutat)
+        se pune automat în clipboard — pe pagină e doar Ctrl+V.
+        ``name`` e numele de căutat; ignorat dacă e gol.
+        """
+        name = (name or "").strip()
+        if name:
+            try:
+                self.root.clipboard_clear()
+                self.root.clipboard_append(name)
+                self.root.update()  # menține clipboard-ul după închidere
+                self.set_status(t("web_copied_clipboard").format(name=name))
+            except Exception:
+                pass
+        webbrowser.open(COL_SEARCH_URL)
+
+    def _browse_wikipedia_for(self, name: str) -> None:
+        """Deschide articolul Wikipedia; redirecționează sinonimele."""
+        name = (name or "").strip()
+        if not name or name in ("Necunoscut", "Unknown"):
+            messagebox.showinfo(t("web_title"), t("web_no_species"),
+                                parent=self.root)
+            return
+        webbrowser.open(WIKIPEDIA_SPECIES_URL + quote(name.replace(" ", "_")))
+
+    def open_col_page(self):
+        """Căutare CoL pentru textul din câmpul de căutare web."""
+        self._browse_col_for(self._web_search_name())
+
+    def open_wikipedia_page(self):
+        """Wikipedia pentru textul din câmpul de căutare web."""
+        self._browse_wikipedia_for(self._web_search_name())
 
     def open_quick_catalog_dialog(self):
         """Dialog pentru catalogare rapidă: alege imagini + specie din taxonomy.db."""

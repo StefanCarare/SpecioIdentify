@@ -144,6 +144,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "SCOP\nIdentifică plante și animale din fotografii, verifică rezultatele și construiește un catalog cu profiluri de specie. Identificarea AI poate fi greșită; nu o folosi ca dovadă că o plantă sau ciupercă este comestibilă.\n\n"
             "1. PREGĂTIRE\nPornește Ollama și selectează un model compatibil cu imaginile. Pentru instalare, consultă README.md; pentru baza taxonomică, col/README.md și secțiunea Administrare.\n\n"
             "2. IDENTIFICARE\nAdaugă 2–3 fotografii, selectează una, alege un prompt potrivit și apasă ANALYZE. Citește Output Item și verifică specia. ANALYZE ALL procesează lista; începe cu un lot mic.\n\n"
+            "VERIFICARE WEB (AUXILIAR)\nCâmpul de lângă butoanele 🌐 CoL și 🌐 WIKIPEDIA se completează cu specia identificată și acceptă alternative scrise manual. 🌐 CoL deschide Catalogue of Life și copiază numele în clipboard — pe pagină e doar Ctrl+V. 🌐 WIKIPEDIA deschide articolul speciei: sinonimele sunt redirecționate la numele acceptat, util când CoL nu recunoaște numele dat de model. Aceleași butoane apar și în fereastra de atenționare a verificării CoL.\n\n"
             "3. SALVARE ȘI CORECTARE\nO analiză cu identificare recunoscută de parser este catalogată automat: imaginea se copiază în output, iar analiza se salvează în baza de date. SAVE păstrează editările textului pentru o înregistrare existentă. Pentru schimbarea clasificării folosește UPDATE SPECIES, nu doar editarea textului. Dacă identificarea nu a fost recunoscută, verifică întâi catalogarea; simpla afișare a unui răspuns nu garantează salvarea.\n\n"
             "4. PROFILUL SPECIEI\nDupă verificarea speciei, folosește GEN PROFILE. Verifică descrierea din Species Profile și folosește SAVE PROFILE pentru editările tale. LOAD PROFILE reîncarcă profilul salvat; salvează modificările înainte de reîncărcare. Profilul aparține speciei, nu unei singure fotografii."
         ),
@@ -151,6 +152,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "PURPOSE\nIdentify plants and animals from photos, review the results and build a catalogue with species profiles. AI identification can be wrong; do not use it as proof that a plant or mushroom is edible.\n\n"
             "1. PREPARATION\nStart Ollama and select an image-capable model. See README.md for installation; for the taxonomy database, see col/README.md and the Admin section.\n\n"
             "2. IDENTIFICATION\nAdd 2–3 photos, select one, choose a suitable prompt and press ANALYZE. Read Output Item and verify the species. ANALYZE ALL processes the list; start with a small batch.\n\n"
+            "WEB VERIFICATION (AUXILIARY)\nThe field next to the 🌐 CoL and 🌐 WIKIPEDIA buttons is pre-filled with the identified species and also accepts manually typed alternatives. 🌐 CoL opens the Catalogue of Life and copies the name to the clipboard — on the page it is just Ctrl+V. 🌐 WIKIPEDIA opens the species article: synonyms redirect to the accepted name, useful when CoL does not recognise the model's name. The same helpers appear in the Catalogue of Life warning dialog.\n\n"
             "3. SAVING AND CORRECTIONS\nAn analysis whose identification is recognised by the parser is catalogued automatically: the image is copied into output and the analysis is stored in the database. SAVE keeps text edits for an existing record. Use UPDATE SPECIES to change the classification, rather than only editing the text. If identification was not recognised, check cataloguing first; a displayed response does not guarantee that it was saved.\n\n"
             "4. SPECIES PROFILE\nAfter verifying the species, use GEN PROFILE. Review the description in Species Profile and use SAVE PROFILE to keep your edits. LOAD PROFILE reloads the saved profile; save changes before reloading. A profile belongs to the species, not just one photo."
         ),
@@ -219,6 +221,8 @@ STRINGS: dict[str, dict[str, str]] = {
     },
     "btn_quick_catalog": {"ro": "📁 QUICK CATALOG", "en": "📁 QUICK CATALOG"},
     "btn_update_species": {"ro": "UPDATE SPECIES", "en": "UPDATE SPECIES"},
+    "btn_open_col": {"ro": "🌐 CoL", "en": "🌐 CoL"},
+    "btn_open_wikipedia": {"ro": "🌐 WIKIPEDIA", "en": "🌐 WIKIPEDIA"},
     "btn_gen_profile": {"ro": "GEN PROFILE", "en": "GEN PROFILE"},
     "btn_load_profile": {"ro": "LOAD PROFILE", "en": "LOAD PROFILE"},
     "btn_save_profile": {"ro": "SAVE PROFILE", "en": "SAVE PROFILE"},
@@ -396,6 +400,19 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "🌐 Update in catalogue...",
     },
     "col_btn_later": {"ro": "Mai târziu", "en": "Later"},
+
+    # ---- Web lookups (butoanele 🌐 CoL / 🌐 WIKIPEDIA) ----
+    "web_title": {"ro": "Wikipedia", "en": "Wikipedia"},
+    "web_no_species": {
+        "ro": ("Câmpul de căutare este gol. Introdu un nume de specie "
+               "(ex. Lavatera trimestris) sau rulează ANALYZE mai întâi."),
+        "en": ("The search field is empty. Enter a species name "
+               "(e.g. Lavatera trimestris) or run ANALYZE first."),
+    },
+    "web_copied_clipboard": {
+        "ro": "\"{name}\" copiat în clipboard — lipește (Ctrl+V) în căutarea CoL.",
+        "en": "\"{name}\" copied to clipboard — paste (Ctrl+V) in the CoL search.",
+    },
 
 }
 
