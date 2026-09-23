@@ -358,6 +358,45 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "Common name in English:"
     },
 
+    # ---- Dialog verificare CoL după identificare (validate_species) ----
+    "col_title": {
+        "ro": "Specie neverificată în Catalogue of Life",
+        "en": "Species not verified in Catalogue of Life",
+    },
+    "col_intro": {
+        "ro": "Specia identificată de model nu există în baza de date (Catalogue of Life):\n",
+        "en": "The species identified by the model does not exist in the database (Catalogue of Life):\n",
+    },
+    "col_genus_list": {
+        "ro": "• Genul {genus} conține {n} specii (primele {shown}): {names}",
+        "en": "• Genus {genus} contains {n} species (first {shown}): {names}",
+    },
+    "col_closest_genus": {
+        "ro": "• Cea mai apropiată specie din gen: {name}",
+        "en": "• Closest species in the genus: {name}",
+    },
+    "col_accepted": {
+        "ro": "• Specia acceptată: {name} — Genul acceptat: {genus} ({family})",
+        "en": "• Accepted species: {name} — Accepted genus: {genus} ({family})",
+    },
+    "col_genus_changed": {
+        "ro": "• Genul s-a schimbat {old} → {new}; epiteta „{epithet}” rămâne neschimbată.",
+        "en": "• Genus changed {old} → {new}; epithet “{epithet}” stays the same.",
+    },
+    "col_k_closest": {
+        "ro": "• Cea mai apropiată specie din date: {name} (nesigur — verifică manual)",
+        "en": "• Closest species on record: {name} (uncertain — verify manually)",
+    },
+    "col_no_hint": {
+        "ro": "• Nu s-a găsit nicio potrivire plauzibilă în CoL. Specia poate lipsi din snapshot.",
+        "en": "• No plausible match found in CoL. The species may be missing from the snapshot.",
+    },
+    "col_btn_update": {
+        "ro": "🌐 Actualizează în catalog...",
+        "en": "🌐 Update in catalogue...",
+    },
+    "col_btn_later": {"ro": "Mai târziu", "en": "Later"},
+
 }
 
 

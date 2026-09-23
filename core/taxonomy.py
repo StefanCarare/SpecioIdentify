@@ -524,3 +524,283 @@ def verify_tree_counts(tree_text, scientific_name, db_path=None):
 
 
 
+# ------------------------------------------------------- CoL validation
+# Read-only validation of identified names against the CoL snapshot, with
+# graduated suggestions. Spec: tools/local_dev/test_validate_taxonomy.py;
+# algorithm: tools/local_dev/_probe_validate.py (timings <=1s per query —
+# LIKE patterns are interpolated as literals so SQLite keeps its range
+# optimization; bound parameters would defeat it).
+
+_VAL_CAMEL_RE = re.compile(r"(?<=[a-z])(?=[A-Z])")
+
+# category -> (kingdom, class) anchors used when the genus row is missing
+_VAL_ANCHOR = {
+    "plant": ("Plantae", ""),
+    "bird": ("Animalia", "Aves"),
+    "mammal": ("Animalia", "Mammalia"),
+    "insect": ("Animalia", "Insecta"),
+    "arachnid": ("Animalia", "Arachnida"),
+    "mollusc": ("Animalia", "Mollusca"),
+    "fish": ("Animalia", ""),
+}
+
+
+def _val_lev(a, b):
+    """Edit distance (Levenshtein), two-row implementation."""
+    if a == b:
+        return 0
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+
+
+def _val_nkey(candidate, query_lower):
+    """Normalized similarity key: lev / max(len) — raw lev favors short
+    genera (validated probe finding: 'Potentilla indica' was #124/157)."""
+    c = candidate.lower()
+    return _val_lev(query_lower, c) / max(len(query_lower), len(c), 1)
+
+
+def _val_like(pattern):
+    """SQL-literal LIKE pattern (escaped), never a bound parameter."""
+    return pattern.replace("'", "''")
+
+
+def _val_split(name):
+    """(genus, epithet) of a binomial; camel-split for 'Genusspecies' slips."""
+    parts = name.split()
+    if len(parts) >= 2:
+        return parts[0], parts[-1]
+    bits = _VAL_CAMEL_RE.split(name)
+    if len(bits) == 2:
+        return bits[0], bits[1]
+    return name, None
+
+
+# Genus reassignments confirmed by taxonomic revision — our own local
+# knowledge (NOT part of CoL): sunk genus -> currently accepted genus.
+# Kept as a plain dict so taxonomy.db remains byte-identical; extend here
+# when a new sunk genus is identified by validation.
+_VAL_ALIAS_GENUS = {
+    "duchesnea": "Potentilla",
+    "lavatera": "Malva",
+    "pennisetum": "Cenchrus",
+    "calystegia": "Convolvulus",
+}
+
+
+def validate_species(species, category=None, db_path=None):
+    """Valideaza o specie identificata de model impotriva snapshot-ului CoL.
+
+    Read-only (PRAGMA query_only). Returneaza dict cu: status ('exact' |
+    'genus_ok' | 'not_in_col'), genus, epithet, member_count, members,
+    closest_in_genus, accepted_genus (ex. Calystegia -> Convolvulus),
+    accepted ({name, family, class} | None) — tinta de reincadrare, si
+    closest (top 5 alternative). Sugestiile sunt propuneri pentru
+    confirmarea umana (Update Species); taxonomy.db nu este modificat.
+    Spec: tools/local_dev/test_validate_taxonomy.py.
+    """
+    con = connect_taxonomy(db_path)
+    try:
+        con.execute("PRAGMA query_only = ON")
+        result = {
+            "status": "not_in_col",
+            "genus": "",
+            "epithet": None,
+            "member_count": 0,
+            "members": [],
+            "closest_in_genus": None,
+            "accepted_genus": None,
+            "accepted": None,
+            "closest": [],
+        }
+        name = (species or "").strip()
+        if not name:
+            return result
+
+        # tier 0: exact species (binary compare hits idx_taxa_name; the
+        # catalog enforces canonical case at ingestion, LIKE is only the
+        # fallback for manually typed names).
+        cols = ("lineage_genus, lineage_family, lineage_order, lineage_class,"
+                " lineage_phylum, lineage_kingdom")
+        row = con.execute(
+            f"SELECT {cols} FROM taxa WHERE name = ? AND rank='species' LIMIT 1",
+            (name,),
+        ).fetchone()
+        if row is None:
+            row = con.execute(
+                f"SELECT {cols} FROM taxa WHERE name LIKE '{_val_like(name)}'"
+                " AND rank='species' LIMIT 1",
+            ).fetchone()
+        if row is not None:
+            genus, epithet = _val_split(name)
+            result["status"] = "exact"
+            result["genus"] = genus
+            result["epithet"] = epithet
+            return result
+
+        # split the queried name; recover genus prefix for opaque slips
+        genus, epithet = _val_split(name)
+        if epithet is None and " " not in name:
+            pref = con.execute(
+                "SELECT name FROM taxa WHERE rank='genus'"
+                " AND lower(?) LIKE lower(name || '%')"
+                " ORDER BY length(name) DESC LIMIT 1",
+                (name,),
+            ).fetchone()
+            if pref:
+                genus = pref[0]
+                epithet = name[len(genus):].strip() or None
+
+        # anchor row: the queried genus, if CoL still accepts it
+        gen_row = con.execute(
+            "SELECT lineage_class, lineage_family FROM taxa"
+            " WHERE name = ? AND rank='genus' LIMIT 1",
+            (genus,),
+        ).fetchone()
+
+        result["genus"] = genus
+        result["epithet"] = epithet
+        cls = (gen_row[0] if gen_row else None) or ""
+        fam = (gen_row[1] if gen_row else None) or ""
+        result["status"] = "genus_ok" if gen_row is not None else "not_in_col"
+
+        # members of the (existing) genus — one scan feeds count, list and
+        # the closest member
+        if gen_row is not None:
+            members_all = [
+                r[0] for r in con.execute(
+                    f"SELECT name FROM taxa WHERE name LIKE"
+                    f" '{_val_like(genus)} %' AND rank='species'",
+                ).fetchall()
+            ]
+            members_all.sort(key=str.lower)
+            result["member_count"] = len(members_all)
+            result["members"] = members_all[:25]
+            if members_all and epithet:
+                query_lower = name.lower()
+                result["closest_in_genus"] = min(
+                    members_all, key=lambda m: _val_nkey(m, query_lower)
+                )
+
+        # tier F: infraspecific fragments of the full binomial
+        # ('Calystegia sepium subsp. ...') -> lineage_genus gives the
+        # accepted genus; tier F2: fragments under a genus row that is
+        # gone ('Duchesnea ...' surviving under an old combination).
+        if epithet:
+            frag = con.execute(
+                "SELECT lineage_genus FROM taxa"
+                f" WHERE name LIKE '{_val_like(name)} %'"
+                " AND lineage_genus IS NOT NULL LIMIT 5",
+            ).fetchall()
+            if gen_row is None:
+                frag += con.execute(
+                    "SELECT lineage_genus FROM taxa"
+                    f" WHERE name LIKE '{_val_like(genus)} %'"
+                    " AND lineage_genus IS NOT NULL"
+                    f" AND lower(lineage_genus) != lower('{_val_like(genus)}')"
+                    " LIMIT 5",
+                ).fetchall()
+            for (lin,) in frag:
+                lin = (lin or "").strip()
+                if lin and lin.lower() != genus.lower():
+                    result["accepted_genus"] = lin
+                    break
+
+        # Genus reassignments confirmed by taxonomic revision — local
+        # knowledge, never written into taxonomy.db (CoL stays pristine).
+        if result["accepted_genus"] is None and gen_row is None and genus:
+            result["accepted_genus"] = _VAL_ALIAS_GENUS.get(genus.lower())
+
+        # Same epithet inside the accepted genus beats any string-distance
+        # guess: Duchesnea indica -> Potentilla indica is synonymy, which
+        # Levenshtein ranking cannot see. All 4 target rows verified to
+        # exist in the snapshot (Convolvulus sepium, Potentilla indica,
+        # Cenchrus alopecuroides, Malva trimestris).
+        confirmed = None
+        if epithet and result["accepted_genus"]:
+            agr = result["accepted_genus"]
+            confirmed = con.execute(
+                "SELECT name, lineage_family, lineage_class FROM taxa"
+                " WHERE name = ? AND rank='species' LIMIT 1",
+                (f"{agr} {epithet}",),
+            ).fetchone()
+            if confirmed is None:
+                confirmed = con.execute(
+                    "SELECT name, lineage_family, lineage_class FROM taxa"
+                    f" WHERE name LIKE '{_val_like(agr)} %{_val_like(epithet)}'"
+                    " AND rank='species' LIMIT 1",
+                ).fetchone()
+            if confirmed is not None:
+                result["accepted"] = {
+                    "name": confirmed[0],
+                    "family": confirmed[1],
+                    "class": confirmed[2],
+                }
+
+        # Epithet match across the whole snapshot, filtered by the anchors
+        # we have — genus lineage (class/family) first, then the identified
+        # category (class/kingdom) — ranked by normalized Levenshtein.
+        # Proposals only: taxonomy.db is never modified.
+        if epithet:
+            hits = con.execute(
+                "SELECT name, lineage_class, lineage_family, lineage_kingdom"
+                " FROM taxa"
+                f" WHERE name LIKE '% {_val_like(epithet)}'"
+                " AND rank='species' LIMIT 3000",
+            ).fetchall()
+            knd, cls_cat = _VAL_ANCHOR.get(
+                (category or "").strip().lower(), ("", "")
+            )
+            tiers = []
+            if fam:
+                tiers.append([h for h in hits if (h[2] or "") == fam])
+            if cls:
+                tiers.append([h for h in hits if (h[1] or "") == cls])
+            if cls_cat:
+                tiers.append([h for h in hits if (h[1] or "") == cls_cat])
+            if knd:
+                tiers.append([h for h in hits if (h[3] or "") == knd])
+            tiers.append(list(hits))
+            seen = set()
+            if confirmed is not None:
+                seen.add(confirmed[0])
+                result["closest"].append(
+                    {"name": confirmed[0],
+                     "family": confirmed[1], "class": confirmed[2]}
+                )
+            # Known accepted genus but no confirmable species inside it:
+            # propose the genus only — never present a cross-family
+            # string guess as "the accepted species".
+            pin_genus = (
+                result["accepted_genus"] is not None and confirmed is None
+            )
+            for tier in tiers:
+                ranked = sorted(
+                    tier, key=lambda h: _val_nkey(h[0], name.lower())
+                )
+                if ranked and result["accepted"] is None and not pin_genus:
+                    best = ranked[0]
+                    result["accepted"] = {
+                        "name": best[0], "family": best[2], "class": best[1],
+                    }
+                for hit in ranked:
+                    if hit[0] in seen:
+                        continue
+                    seen.add(hit[0])
+                    result["closest"].append(
+                        {"name": hit[0], "family": hit[2], "class": hit[1]}
+                    )
+                    if len(result["closest"]) >= 5:
+                        break
+                if len(result["closest"]) >= 5 and result["accepted"]:
+                    break
+        return result
+    finally:
+        con.close()
+
+

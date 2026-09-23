@@ -14,6 +14,22 @@ from core.catalog_paths import (
 )
 
 
+def _remove_folder_if_empty(folder: Path, stop_at: Path) -> None:
+    """Remove *folder* if it is empty, without touching *stop_at* itself."""
+    try:
+        folder = folder.resolve()
+        stop_at = stop_at.resolve()
+    except OSError:
+        return
+    if folder == stop_at:
+        return
+    try:
+        if folder.is_dir() and not any(folder.iterdir()):
+            folder.rmdir()
+    except OSError:
+        pass
+
+
 STRUCTURED_DATA_MARKER = "=== STRUCTURED DATA ==="
 
 SPECIES_PROFILE_PROMPT_NAME = "species_profile_deep"
@@ -888,6 +904,7 @@ def update_catalog_classification(
     if not item:
         raise ValueError("Imaginea nu are încă o înregistrare în catalog.")
 
+    old_scientific_name = (item.get("scientific_name") or "").strip()
     species_key = _safe_part(scientific_name, "Necunoscut")
     destination_folder = output_dir / category_folder / species_key
     destination_folder.mkdir(parents=True, exist_ok=True)
@@ -903,6 +920,12 @@ def update_catalog_classification(
             if not destination.exists():
                 break
             number += 1
+
+    old_parent = None
+    try:
+        old_parent = old_image.parent.resolve()
+    except OSError:
+        old_parent = None
 
     if old_image.resolve() != destination.resolve() and old_image.exists():
         shutil.move(str(old_image), str(destination))
@@ -939,6 +962,41 @@ def update_catalog_classification(
             ),
         )
         connection.commit()
+
+        # Dacă specia s-a schimbat, profilul vechi rămâne orfan: nicio poză nu
+        # îl mai referențiază, iar Gen Profile va crea unul nou cu numele nou.
+        # Îl ștergem doar dacă nu mai există nicio înregistrare în catalog_items
+        # cu vechiul nume (altfel am șterge profilul altor poze rămase acolo).
+        if old_scientific_name and old_scientific_name != scientific_name:
+            still_used = connection.execute(
+                "SELECT 1 FROM catalog_items WHERE scientific_name = ? LIMIT 1",
+                (old_scientific_name,),
+            ).fetchone()
+            if still_used is None:
+                connection.execute(
+                    "DELETE FROM species_profiles WHERE scientific_name = ?",
+                    (old_scientific_name,),
+                )
+                connection.commit()
+
+        # Șterge folderul vechi doar dacă a rămas gol ȘI nicio altă
+        # înregistrare din catalog nu mai indică spre el.
+        try:
+            relative_old_parent = old_parent.relative_to(output_dir.resolve())
+        except (AttributeError, OSError, ValueError):
+            relative_old_parent = None
+        old_still_referenced = False
+        if relative_old_parent is not None:
+            rows = connection.execute(
+                "SELECT catalog_path FROM catalog_items WHERE image_hash != ?",
+                (item["image_hash"],),
+            ).fetchall()
+            for (stored_path,) in rows:
+                if Path(str(stored_path)).parent == relative_old_parent:
+                    old_still_referenced = True
+                    break
+        if not old_still_referenced and old_parent is not None:
+            _remove_folder_if_empty(old_parent, output_dir.resolve())
     finally:
         connection.close()
 

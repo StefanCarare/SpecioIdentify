@@ -82,6 +82,7 @@ from core.taxonomy import (
     lookup_chain as taxonomy_lookup_chain,
     build_verified_context as taxonomy_verified_context,
     fix_tree_counts as taxonomy_fix_tree_counts,
+    validate_species,
 )
 
 from core.lang import t, get_language, set_language, SUPPORTED_LANGUAGES
@@ -4971,15 +4972,161 @@ class MainWindow:
         )
 
         # ----------------------------------------------------
-        # Completion popup
+        # Completion popup — chained after the CoL check
+        # (validate_species runs in a worker thread; the popup
+        # appears after it so dialogs never stack out of order).
         # ----------------------------------------------------
 
-        messagebox.showinfo(
-            "Analiză finalizată",
-            f"Analiza a fost finalizată pentru:\n\n"
-            f"{self.image_path.name}\n\n"
-            f"Durată: {self.format_seconds(elapsed)}"
-        )
+        self._finish_analysis_chain(elapsed)
+
+    def _finish_analysis_chain(self, elapsed: float) -> None:
+        """CoL validation (background) → warning dialog → completion popup.
+
+        ``validate_species`` reads the 900 MB taxonomy.db through per-call
+        connections, so it is safe in a daemon thread; worst-case epitax
+        scans (~5 s) never freeze the UI. The completion popup is shown
+        only after validation returns, so the more informative CoL dialog
+        (when the name is not verified) always appears first.
+        """
+        box: dict = {}
+
+        def worker() -> None:
+            try:
+                box["v"] = self._validate_current_species()
+            except Exception:
+                box["v"] = None
+            try:
+                self.root.after(0, show)
+            except Exception:
+                pass  # window closed while validating
+
+        def show() -> None:
+            payload = box.get("v")
+            if payload:
+                try:
+                    self._show_col_dialog(payload["result"], payload["name"])
+                except Exception:
+                    pass  # never block the completion popup on the dialog
+            messagebox.showinfo(
+                "Analiză finalizată",
+                f"Analiza a fost finalizată pentru:\n\n"
+                f"{self.image_path.name}\n\n"
+                f"Durată: {self.format_seconds(elapsed)}"
+            )
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _validate_current_species(self):
+        """Read-only CoL check for the current catalog item, or None.
+
+        Returns ``{"result": ..., "name": str}`` when the identified name
+        is NOT verified in Catalogue of Life, and None otherwise (no item,
+        unknown name, or exact match — nothing worth interrupting for).
+        """
+        if self.image_path is None:
+            return None
+        item = get_catalog_item(self.image_path, OUTPUT_DIR) or {}
+        name = (item.get("scientific_name") or "").strip()
+        category = (item.get("category") or "").strip()
+        if not name or name in ("Necunoscut", "Unknown"):
+            return None
+        result = validate_species(name, category)
+        if result.get("status") == "exact":
+            return None
+        return {"result": result, "name": name}
+
+    def _format_col_message(self, name: str, result: dict):
+        """Graduated CoL message → ``(text, accepted_name_or_None)``.
+
+        Tier structure:
+        - ``genus_ok``:   genus members + closest-in-genus + accepted hit;
+        - ``not_in_col``: accepted species/genus, else closest fallback;
+        - anything else:  honest "no plausible match" note.
+        """
+        lines = [t("col_intro") + name, ""]
+        status = result.get("status")
+        accepted = result.get("accepted")
+
+        if status == "genus_ok":
+            members = result.get("members") or []
+            if members:
+                lines.append(t("col_genus_list").format(
+                    genus=result.get("genus") or "?",
+                    n=result.get("member_count") or len(members),
+                    shown=len(members),
+                    names=", ".join(members),
+                ))
+            if result.get("closest_in_genus"):
+                lines.append(t("col_closest_genus").format(
+                    name=result["closest_in_genus"]
+                ))
+
+        if accepted:
+            acc_genus = accepted["name"].split()[0]
+            lines.append(t("col_accepted").format(
+                name=accepted["name"],
+                genus=acc_genus,
+                family=accepted.get("family") or "—",
+            ))
+            if result.get("genus") and acc_genus != result["genus"]:
+                lines.append(t("col_genus_changed").format(
+                    old=result["genus"],
+                    new=acc_genus,
+                    epithet=result.get("epithet") or "",
+                ))
+        else:
+            if (result.get("accepted_genus") and result.get("genus")
+                    and result["accepted_genus"] != result["genus"]):
+                lines.append(t("col_genus_changed").format(
+                    old=result["genus"],
+                    new=result["accepted_genus"],
+                    epithet=result.get("epithet") or "",
+                ))
+            closest = result.get("closest") or []
+            if closest:
+                lines.append(t("col_k_closest").format(
+                    name=closest[0]["name"]
+                ))
+            else:
+                lines.append(t("col_no_hint"))
+
+        return "\n".join(lines), (accepted["name"] if accepted else None)
+
+    def _show_col_dialog(self, result: dict, name: str) -> None:
+        """Notice for a non-verified name + optional pre-filled Update form."""
+        text, accepted = self._format_col_message(name, result)
+
+        dlg = tk.Toplevel(self.root)
+        dlg.title(t("col_title"))
+        dlg.transient(self.root)
+        dlg.geometry("660x440")
+
+        body = tk.Text(dlg, wrap="word", relief="flat", height=18)
+        body.insert("1.0", text)
+        body.configure(state="disabled")
+        body.pack(fill="both", expand=True, padx=12, pady=(12, 8))
+
+        buttons = ttk.Frame(dlg)
+        buttons.pack(fill="x", padx=12, pady=(0, 12))
+
+        if accepted:
+            def on_update() -> None:
+                dlg.destroy()
+                if self.image_path is not None:
+                    self.update_species_classification(
+                        prefill={"scientific_name": accepted}
+                    )
+
+            ttk.Button(
+                buttons, text=t("col_btn_update"), command=on_update
+            ).pack(side="right")
+
+        ttk.Button(
+            buttons, text=t("col_btn_later"), command=dlg.destroy
+        ).pack(side="right", padx=(0, 8))
+
+        dlg.grab_set()
+        dlg.wait_window()
 
     def analysis_failed(
         self,
@@ -5783,11 +5930,15 @@ class MainWindow:
             )
 
 
-    def update_species_classification(self):
+    def update_species_classification(self, prefill: dict | None = None):
         """
         Prezintă toate câmpurile de clasificare într-o singură
         fereastră cu formular — în loc de 4 ferestre simpledialog
         consecutive.
+
+        ``prefill`` (opțional) suprascrie câmpurile pre-completate din
+        catalog — folosit de dialogul de verificare CoL pentru a propune
+        specia acceptată fără a schimba restul valorilor.
         """
         if self.image_path is None:
             return
@@ -5811,16 +5962,6 @@ class MainWindow:
 
         values = {}
 
-        prompt_labels = {
-            "category": t("form_category_hint"),
-            "scientific_name": t("form_scientific_example"),
-            "ro_name": t("form_ro_name"),
-            "en_name": t("form_en_name"),
-        }
-
-        for idx, key in enumerate(["category", "scientific_name", "ro_name", "en_name"]):
-            label = prompt_labels[key]
-
         for idx, (label, key) in enumerate([
             (t("form_category_hint"), "category"),
             (t("form_scientific_example"), "scientific_name"),
@@ -5829,6 +5970,8 @@ class MainWindow:
         ]):
             ttk.Label(form, text=label).pack(anchor="w", padx=12, pady=(8 if idx == 0 else 4, 0))
             initial = item.get(key, "") or ""
+            if prefill and prefill.get(key):
+                initial = prefill[key]
             if key == "category":
                 initial = initial or "Plant"
             entry = ttk.Entry(form, width=50)
