@@ -28,8 +28,14 @@ _*.py
 _verify_*.py
 _smoke_*.py
 
-# Local development and maintenance utilities (not distributed by default)
-/tools/local_dev/
+# Local development utilities: versioned on purpose — they are the build
+# process (app_restart) and the regression net (test_*.py, i18n_lint.py).
+# Only the throwaway probes stay out.
+/tools/local_dev/_*
+/tools/local_dev/*.bak
+
+# Superseded prompt copies: kept locally for comparison, not part of the app
+prompts/bkup/
 
 # Source-only distribution: local data must never be committed
 # (input/, output/, name_sources/ ignore their own content

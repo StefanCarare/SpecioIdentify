@@ -30,6 +30,98 @@ def _remove_folder_if_empty(folder: Path, stop_at: Path) -> None:
         pass
 
 
+def _prune_unreferenced_folder(
+    connection,
+    output_dir: Path,
+    folder: Path,
+    image_hash: str,
+) -> None:
+    """Deletes *folder* when it is empty AND no other row points into it.
+
+    A species folder survives as long as it still holds images, even if the
+    catalog rows moved elsewhere; the emptiness check alone is not enough.
+    """
+    try:
+        relative = folder.resolve().relative_to(Path(output_dir).resolve())
+    except (AttributeError, OSError, ValueError):
+        return
+    rows = connection.execute(
+        "SELECT catalog_path FROM catalog_items WHERE image_hash != ?",
+        (image_hash,),
+    ).fetchall()
+    for (stored_path,) in rows:
+        if Path(str(stored_path)).parent == relative:
+            return
+    _remove_folder_if_empty(folder, Path(output_dir).resolve())
+
+
+def _relocate_catalog_file(
+    connection,
+    output_dir: Path,
+    image_hash: str,
+    old_catalog_path: str,
+    category_folder: str,
+    species_key: str,
+) -> str:
+    """Keeps the catalog image where its (category, species) says it is.
+
+    Moves the file when the species folder changed and returns the stored
+    (relative, posix) path. The source folder is pruned when it became
+    unreferenced — this is what removes the old `Ixobrychus_minutus` folder
+    after the item was moved to `Botaurus_minutus`.
+    """
+    old_image = resolve_catalog_path(old_catalog_path, output_dir)
+    destination_folder = Path(output_dir) / category_folder / species_key
+    try:
+        same_folder = old_image.parent.resolve() == destination_folder.resolve()
+    except OSError:
+        same_folder = old_image.parent == destination_folder
+
+    if same_folder:
+        _prune_unreferenced_folder(connection, output_dir, old_image.parent, image_hash)
+        return str(old_catalog_path)
+
+    destination_folder.mkdir(parents=True, exist_ok=True)
+    number = 1
+    while True:
+        destination = destination_folder / (
+            f"{species_key}_{number:04d}{old_image.suffix.lower()}"
+        )
+        if not destination.exists():
+            break
+        number += 1
+
+    if old_image.exists():
+        shutil.move(str(old_image), str(destination))
+    stored_path = store_catalog_path(destination, output_dir)
+    _prune_unreferenced_folder(connection, output_dir, old_image.parent, image_hash)
+    return stored_path
+
+
+def _drop_orphan_profile(
+    connection,
+    old_scientific_name: str,
+    new_scientific_name: str,
+) -> None:
+    """Deletes the profile of the old name when no item references it anymore.
+
+    Without this the renamed species kept two profiles — the old one stayed
+    in `species_profiles` and the Output pane looked for a profile of a name
+    that no picture carried any more.
+    """
+    if not old_scientific_name or old_scientific_name == new_scientific_name:
+        return
+    still_used = connection.execute(
+        "SELECT 1 FROM catalog_items WHERE scientific_name = ? LIMIT 1",
+        (old_scientific_name,),
+    ).fetchone()
+    if still_used is None:
+        connection.execute(
+            "DELETE FROM species_profiles WHERE scientific_name = ?",
+            (old_scientific_name,),
+        )
+
+
 STRUCTURED_DATA_MARKER = "=== STRUCTURED DATA ==="
 
 SPECIES_PROFILE_PROMPT_NAME = "species_profile_deep"
@@ -130,34 +222,109 @@ SPECIES_PROFILE_FIELDS_ANIMAL = (
 )
 
 
+# The contract is a trailing appendix, introduced by a Markdown heading that
+# has drifted between copies ("**Date structurate (JSON)", "## Date structurate
+# (JSON)", ...), so it is matched loosely rather than by one exact string.
+PROFILE_CONTRACT_PATTERN = re.compile(
+    r"(?im)^[\s>#*_`~=-]*date structurate\s*\(json\)"
+)
+
+
+def strip_profile_contract(prompt: str) -> str:
+    """Removes a hand-copied contract block from a profile template.
+
+    The canonical block is emitted by append_species_profile_instruction,
+    which is generated from SPECIES_PROFILE_FIELDS_* and therefore always
+    matches the parser. Older copies kept in prompts/species_profile_deep.txt
+    or in the `prompts` table used to ship the rules — and the whole closed
+    vocabulary — a second time; that duplication is what pushed GEN PROFILE
+    past the model's context length.
+
+    The block is a trailing appendix by design, so it is dropped to the end of
+    the text. Anything the template still needs must live above the heading.
+    An already-appended block (which starts straight at the marker) is
+    dropped the same way, so appending is idempotent.
+    """
+    match = PROFILE_CONTRACT_PATTERN.search(prompt)
+    if match:
+        return prompt[: match.start()].rstrip()
+    marker = prompt.find(STRUCTURED_DATA_MARKER)
+    if marker != -1:
+        return prompt[:marker].rstrip()
+    return prompt
+
+
 def append_species_profile_instruction(prompt: str) -> str:
     """
     Adaugă cererea pentru date structurate la nivel de specie
     (răspândire, dimensiuni, habitat, cuib, oua, hrana, etc.).
     Aceste date vor fi preluate ulterior de aplicație și trimise
     în tabela species_profiles.
+
+    Idempotent: any contract block already present in ``prompt`` (file or
+    `prompts` table) is replaced by this one, so the effective prompt always
+    carries exactly one complete, current copy.
     """
     instruction = f"""
 {STRUCTURED_DATA_MARKER}
 La finalul răspunsului adaugă exact acest marker (pe o linie separată, fără
 asteriscuri sau alte formatări) și apoi un singur obiect JSON valid, complet.
 Reguli obligatorii pentru JSON:
-- fiecare valoare este un singur string JSON între ghilimele (de exemplu
-  \"3-5 cm\"), nu obiect imbricat, nu număr gol, nu text în afara ghilimelelor;
-- nu folosi Markdown în obiectul JSON și nu adăuga comentarii;
+- folosește EXACT cheile listate mai jos; NU inventa chei noi, NU duplica chei
+  și NU scrie chei cu diacritice: `oua` (niciodată „ouă”), `culoare_floare`
+  (niciodată „culoare_florii”);
+- fiecare valoare este un singur string JSON scurt (maximum 60 de caractere,
+  o frază), nu obiect imbricat, fără Markdown și fără text în afara ghilimelelor;
+- pentru necunoscut sau fără aplicabilitate folosește null; NU scrie în JSON
+  textele „Necunoscut”, „Absent”, „Nu se aplică” sau „—”;
 - închide toate acoladele deschise și nu adăuga nimic după obiect.
-Folosește câmpurile comune:
-{", ".join(SPECIES_PROFILE_FIELDS_COMMON)},
+Câmpuri comune, obligatorii: {", ".join(SPECIES_PROFILE_FIELDS_COMMON)},
 plus `category`.
-Pentru Păsări adaugă și: {", ".join(SPECIES_PROFILE_FIELDS_BIRD)}.
-Pentru Plante adaugă și: {", ".join(SPECIES_PROFILE_FIELDS_PLANT)}.
-Pentru Animale adaugă și: {", ".join(SPECIES_PROFILE_FIELDS_ANIMAL)}.
-`category` trebuie să fie una dintre: Plant, Mushroom, Insect, Reptile, Amphibian, Bird, Mammal, Animal, Other.
-Dacă o valoare nu poate fi stabilită pentru această specie sau nu este relevantă
-pentru categorie, folosește null. Nu elimina câmpurile comune; pe lângă ele,
-poți adăuga și altele utile pentru cineva care întâlnește specia pe teren.
+Pentru Păsări, peste cele comune: {", ".join(SPECIES_PROFILE_FIELDS_BIRD)}.
+Pentru Plante, peste cele comune: {", ".join(SPECIES_PROFILE_FIELDS_PLANT)}.
+Pentru Animale, insecte și mamifere, peste cele comune: {", ".join(SPECIES_PROFILE_FIELDS_ANIMAL)}.
+Completează toate câmpurile categoriei potrivite speciei; omite câmpurile
+celorlalte categorii (nu le umple cu null). `category` trebuie să fie una
+dintre: Plant, Mushroom, Insect, Reptile, Amphibian, Bird, Mammal, Animal, Other.
+Vocabular închis (scrie EXACT unul dintre valorile permise, fără variații de
+scriere; dacă nu știi, scrie null):
+- petale: Inexistente, 1, 2, 3, 4, 5, 6, 7, Cel mult 4, Cel mult 5,
+  Mai mult de 5, 5-7, Reduse;
+- port: Plantă erbacee, Arbust, Copac, Liană;
+- fruct: Bacă, Drupă, Nucă, Achenă, Cariopsă, Samară, Foliculă, Păstaie,
+  Silicvă, Capsulă;
+- inflorescenta: Floare solitară, Spic, Mănunchi, Compus, Umbeliformă, Cimă,
+  Paniculă, Racem, Spiralată, Corimb, Umbelă, Umbelă compusă, Capitulă,
+  Spadix, Calatidiu;
+- frunza_forma: Lanceolată, Ovată, Eliptică, Cordată, Palmată, Pennată,
+  Fiorată, Aciculară, Liniară, Trifoiolată, Dintată, Reniformă, Obovată,
+  Lobată, Simplă, Compusă, Triunghiulară, Romboidală, Acuminată, Ascuțită,
+  Asimetrică, Cuneată, Deltoidă, Disecată, Divizată, Elipsoidă, Continuă, Fir,
+  Hastată, Carenată, Ligulată, Oblanceolată, Oblongată, Obtuză, Orbiculară,
+  Ovală, Pedată, Penat-fidată, Penat-sectată, Rombică, Rozetă, Runcinată,
+  Sagitată, Spatulată, Fusoidală, Îngustă, Cordiformă, Lujeri,
+  În formă de seceră, Sub formă de suliță, Sub formă de lingură,
+  Sub formă de sabie, În formă de trifoi;
+- frunza_margine: Întreagă, Dintată, Serrată, Crenată, Lobată, Franjurată,
+  Sinuată;
+- frunza_dispozitie: Opusă, Alternată, Spiralată, Verticilată, Rozetă;
+- simetrie: Actinomorfă, Zigomorfă, Nesimetrică;
+- involucru: Prezent, Absent (sau null);
+- stil: 1, 2, 3, 4, 5, 6;
+- ovar: Superior, Inferior;
+- culoare_floare: Alb, Galben, Roșu, Roz, Mov, Portocaliu, Albastru, Verde,
+  Maro, Negru, Gri, Crem, Mixt, Violet, Purpuriu, Turcoaz, Visiniu, Bordo,
+  Cărămiziu, Auriu, Alburiu, Verzui, Roșcat, Multicolor, Bicolor, Indigo,
+  Liliachiu (mai multe culori se separă prin virgulă);
+- inflorire: intervalul lunilor de înflorire, prescurtat cu 3 litere, de exemplu
+  „Mar–Mai”; dacă înflorește tot anul: „Ian–Dec”;
+- habitat: Pajiști și stâncării alpine, Păduri, Pajiști moderat umede până la
+  mlăștinoase, Pajiști uscate, stepice, coaste și stâncării însorite, Sărături,
+  Nisipuri, Ape, Ruderale și semănături (o singură valoare, cea dominantă);
+Câmpurile de text (identificare, descriere, raspandire, dimensiuni):
+1-2 fraze, fără Markdown și fără markerul de final în interiorul valorilor.
 """.strip()
-    return f"{prompt.rstrip()}\n\n{instruction}"
+    return f"{strip_profile_contract(prompt).rstrip()}\n\n{instruction}"
 
 
 def extract_structured_data(response: str) -> dict:
@@ -533,69 +700,43 @@ def catalogize_analysis(
     output_dir = Path(output_dir)
     database_path = output_dir / "catalog.db"
     image_hash = _image_hash(image_path)
-    category = _category_folder(fields.get("category"))
-    scientific_name = fields.get("scientific_name") or "Necunoscut"
-    species_key = _safe_part(scientific_name, "Necunoscut")
-    catalog_folder = output_dir / category / species_key
-    catalog_folder.mkdir(parents=True, exist_ok=True)
 
     connection = connect(database_path)
     try:
+        # Randul exista deja: nu atingem fisierul de pe disc, ci doar
+        # re-catalogam analiza (vezi _refresh_catalog_item).
         existing = connection.execute(
-            "SELECT catalog_path FROM catalog_items WHERE image_hash = ?",
+            "SELECT * FROM catalog_items WHERE image_hash = ?",
             (image_hash,),
         ).fetchone()
         if existing:
-            clean_response = strip_structured_data(response)
-            connection.execute(
-                """
-                UPDATE catalog_items
-                SET analysis_key = ?, response_text = ?, category = ?,
-                    kingdom = ?, genus = ?, species = ?, scientific_name = ?,
-                    ro_name = ?, en_name = ?, confidence = ?, is_uncertain = ?,
-                    extra_fields_json = ?
-                    , manual_override = 0, thinking_text = ?, prompt_text = ?,
-                    preset_name = ?, manual_location = ?, metadata_json = ?,
-                    statistics_json = ?
-                WHERE image_hash = ?
-                """,
-                (
-                    analysis_key_value,
-                    clean_response,
-                    _category_folder(fields.get("category")),
-                    fields.get("kingdom"),
-                    fields.get("genus"),
-                    fields.get("species"),
-                    fields.get("scientific_name"),
-                    fields.get("ro_name"),
-                    fields.get("en_name"),
-                    fields.get("confidence"),
-                    int(bool(fields.get("is_uncertain"))),
-                    json.dumps(
-                        {
-                            key: value for key, value in fields.items()
-                            if key not in STANDARD_FIELDS
-                        },
-                        ensure_ascii=False,
-                    ),
-                    thinking,
-                    prompt,
-                    preset_name,
-                    manual_location,
-                    json.dumps(image_metadata or {}, ensure_ascii=False),
-                    json.dumps(statistics or {}, ensure_ascii=False),
-                    image_hash,
-                ),
+            return _refresh_catalog_item(
+                connection,
+                output_dir,
+                existing,
+                fields,
+                response,
+                analysis_key_value,
+                thinking,
+                prompt,
+                preset_name,
+                manual_location,
+                image_metadata,
+                statistics,
             )
-            connection.commit()
-            return resolve_catalog_path(existing["catalog_path"], output_dir)
+
+        category = _category_folder(fields.get("category"))
+        scientific_name = fields.get("scientific_name") or "Necunoscut"
+        species_key = _safe_part(scientific_name, "Necunoscut")
+        catalog_folder = output_dir / category / species_key
+        catalog_folder.mkdir(parents=True, exist_ok=True)
 
         next_number = connection.execute(
             "SELECT COUNT(*) FROM catalog_items WHERE category = ? AND scientific_name = ?",
             (category, scientific_name),
         ).fetchone()[0] + 1
         destination = catalog_folder / (
-            f"{_safe_part(scientific_name, 'Necunoscut')}_{next_number:04d}"
+            f"{species_key}_{next_number:04d}"
             f"{image_path.suffix.lower()}"
         )
         shutil.copy2(image_path, destination)
@@ -604,25 +745,6 @@ def catalogize_analysis(
             key: value for key, value in fields.items()
             if key not in STANDARD_FIELDS
         }
-        clean_response = strip_structured_data(response)
-
-        # Protejăm profile-urile bogate generate explicit (prin butonul
-        # "Generează Profil Specie"): nu le suprascriem cu răspunsurile
-        # foto-specifice venite din analiză automată.
-        rich_profile_row = connection.execute(
-            "SELECT profile_fields_json FROM species_profiles "
-            "WHERE lower(scientific_name) = lower(?)",
-            (scientific_name,),
-        ).fetchone()
-        has_rich_profile = bool(
-            rich_profile_row
-            and rich_profile_row["profile_fields_json"].strip() not in ("", "{}")
-        )
-
-        # NOTA: Generarea automată de profile din analiza de imagine a fost
-        # eliminată — profilurile se generează DOAR prin butoanele dedicate
-        # GEN PROFILE / GEN PROFILE ALL. Astfel ANALYZE ALL nu mai declanșează
-        # în spate generarea de profiluri (dublarea timpului de rulare).
         connection.execute(
             """
             INSERT INTO catalog_items (
@@ -638,7 +760,7 @@ def catalogize_analysis(
                 analysis_key_value,
                 store_original_path(image_path, output_dir),
                 store_catalog_path(destination, output_dir),
-                clean_response,
+                strip_structured_data(response),
                 thinking,
                 prompt,
                 preset_name,
@@ -661,6 +783,115 @@ def catalogize_analysis(
         return destination
     finally:
         connection.close()
+
+
+
+
+
+def _refresh_catalog_item(
+    connection,
+    output_dir: Path,
+    existing,
+    fields: dict,
+    response: str,
+    analysis_key_value: str | None,
+    thinking: str,
+    prompt: str,
+    preset_name: str,
+    manual_location: str,
+    image_metadata: dict | None,
+    statistics: dict | None,
+) -> Path:
+    """
+    Re-catalogează o imagine deja prezentă în catalog.
+
+    Reanaliza reține noua analiză (răspuns, statistici, context) dar NU
+    poate răstorni o identificare manuală: dacă rândul poartă
+    ``manual_override = 1`` (butonul „Update species"), numele, categoria și
+    denumirile populare introduse de utilizator rămân autoritare. Doar
+    răspunsul modelului se reține, cu binomialul vechi înlocuit în text.
+    """
+    clean_response = strip_structured_data(response)
+    manual = bool(existing["manual_override"])
+
+    if manual:
+        category = existing["category"] or _category_folder(fields.get("category"))
+        scientific_name = existing["scientific_name"] or "Necunoscut"
+        genus = existing["genus"]
+        species = existing["species"]
+        ro_name = existing["ro_name"]
+        en_name = existing["en_name"]
+        # Modelul poate încă răspunde cu numele vechi: îl înlocuim în
+        # răspuns ca panoul Output să nu mai afișeze specia abandonată.
+        clean_response = _drop_stale_binomial(
+            clean_response,
+            scientific_name,
+            fields.get("scientific_name") or "",
+        )
+    else:
+        category = _category_folder(fields.get("category"))
+        scientific_name = fields.get("scientific_name") or "Necunoscut"
+        genus = fields.get("genus")
+        species = fields.get("species")
+        ro_name = fields.get("ro_name")
+        en_name = fields.get("en_name")
+
+    # Fisierul trebuie sa urmeze (categoria, specia) inscrise in rand: daca
+    # reanaliza schimba specia, imaginea este mutata iar folderul vechi este
+    # eliminat — altfel ramane un folder orfane care nu mai corespunde
+    # niciunui rand din catalog.
+    stored_path = _relocate_catalog_file(
+        connection,
+        output_dir,
+        existing["image_hash"],
+        existing["catalog_path"],
+        category,
+        _safe_part(scientific_name, "Necunoscut"),
+    )
+
+    connection.execute(
+        """
+        UPDATE catalog_items
+        SET analysis_key = ?, response_text = ?, category = ?,
+            kingdom = ?, genus = ?, species = ?, scientific_name = ?,
+            ro_name = ?, en_name = ?, confidence = ?, is_uncertain = ?,
+            extra_fields_json = ?, manual_override = ?, thinking_text = ?,
+            prompt_text = ?, preset_name = ?, manual_location = ?,
+            metadata_json = ?, statistics_json = ?, catalog_path = ?
+        WHERE image_hash = ?
+        """,
+        (
+            analysis_key_value,
+            clean_response,
+            category,
+            existing["kingdom"] if manual else fields.get("kingdom"),
+            genus,
+            species,
+            scientific_name,
+            ro_name,
+            en_name,
+            fields.get("confidence"),
+            int(bool(fields.get("is_uncertain"))),
+            json.dumps(
+                {
+                    key: value for key, value in fields.items()
+                    if key not in STANDARD_FIELDS
+                },
+                ensure_ascii=False,
+            ),
+            1 if manual else 0,
+            thinking,
+            prompt,
+            preset_name,
+            manual_location,
+            json.dumps(image_metadata or {}, ensure_ascii=False),
+            json.dumps(statistics or {}, ensure_ascii=False),
+            stored_path,
+            existing["image_hash"],
+        ),
+    )
+    connection.commit()
+    return resolve_catalog_path(stored_path, output_dir)
 
 
 def get_cached_analysis(
@@ -857,31 +1088,86 @@ def update_catalog_response(
     return True
 
 
+def _clean_binomial(value: str) -> str:
+    """Normalizes a scientific name for comparison (no markdown, no dots)."""
+    value = re.sub(r"[*_`]+", "", str(value or "")).strip()
+    return value.strip(" .").strip()
+
+
+def _drop_stale_binomial(
+    text: str,
+    scientific_name: str,
+    old_scientific_name: str = "",
+) -> str:
+    """Removes the previous binomial left over in *text* after a rename.
+
+    A *_fast preset answers with a bare binomial, so the stored response has
+    no "Identificare" section for the rename to rewrite. Without this the
+    Output pane (and every parse of ``response_text``) kept naming the old
+    species, while the catalog row and the folder already carried the new
+    one — the two drifted apart.
+    """
+    old = _clean_binomial(old_scientific_name)
+    new = _clean_binomial(scientific_name)
+    if not old or not new or old.casefold() == new.casefold():
+        return text
+
+    kept: list[str] = []
+    for line in text.splitlines():
+        stripped = _clean_binomial(line)
+        if stripped.casefold() == old.casefold():
+            # The whole line is the stale binomial (fast preset answer).
+            continue
+        # A labelled line that only carries the stale name gets the new one
+        # ("Identificare: Ixobrychus minutus" -> "Identificare: Botaurus …").
+        replaced = re.sub(
+            r"^(?P<label>[^:\n]{1,60}:\s*)\**" + re.escape(old) + r"\**\s*$",
+            lambda match: f"{match.group('label')}*{new}*",
+            line,
+            flags=re.IGNORECASE,
+        )
+        kept.append(replaced)
+    return "\n".join(kept).strip()
+
+
+_IDENTIFICATION_HEADER = re.compile(
+    r"^\s*#*\s*\d*\s*[.)]?\s*\**\s*identificare\s*\**\s*:?\s*$",
+    flags=re.IGNORECASE,
+)
+
+
 def _update_response_identity(
     response: str,
     scientific_name: str,
     ro_name: str,
     en_name: str,
+    old_scientific_name: str = "",
 ) -> str:
-    identification = "\n".join([
+    """Rewrites the identification block and drops the previous binomial."""
+    identification = [
         "1. **Identificare**",
         f"Nume comun în limba română: {ro_name or 'Nespecificat'}",
         f"Nume comun în limba engleză: {en_name or 'Nespecificat'}",
         f"Nume științific: *{scientific_name}*",
         "Identificare corectată manual.",
-        "",
-    ])
-    pattern = r"1\.\s*\*\*Identificare\*\*.*?(?=\n\s*2\.\s*\*\*|\Z)"
-    updated, count = re.subn(
-        pattern,
-        identification,
-        response,
-        count=1,
-        flags=re.IGNORECASE | re.DOTALL,
-    )
-    if count:
-        return updated.strip()
-    return f"{identification}\n{response.strip()}".strip()
+    ]
+
+    lines = str(response or "").splitlines()
+    for index, line in enumerate(lines):
+        if not _IDENTIFICATION_HEADER.match(line):
+            continue
+        # The block is the header plus its "Label: value" lines; the first
+        # blank line (or non-labelled line) ends it, so the rest of the
+        # description — sections 2..8 — is preserved untouched.
+        end = index + 1
+        while end < len(lines) and lines[end].strip() and ":" in lines[end]:
+            end += 1
+        merged = "\n".join(lines[:index] + identification + lines[end:])
+        return _drop_stale_binomial(merged.strip(), scientific_name, old_scientific_name)
+
+    # No identification section (fast preset): prepend the corrected one.
+    merged = "\n".join(identification + lines).strip()
+    return _drop_stale_binomial(merged, scientific_name, old_scientific_name)
 
 
 def update_catalog_classification(
@@ -905,41 +1191,26 @@ def update_catalog_classification(
         raise ValueError("Imaginea nu are încă o înregistrare în catalog.")
 
     old_scientific_name = (item.get("scientific_name") or "").strip()
-    species_key = _safe_part(scientific_name, "Necunoscut")
-    destination_folder = output_dir / category_folder / species_key
-    destination_folder.mkdir(parents=True, exist_ok=True)
-    old_image = Path(item["catalog_path"])
-    if old_image.parent.resolve() == destination_folder.resolve() and old_image.exists():
-        destination = old_image
-    else:
-        number = 1
-        while True:
-            destination = destination_folder / (
-                f"{species_key}_{number:04d}{old_image.suffix.lower()}"
-            )
-            if not destination.exists():
-                break
-            number += 1
-
-    old_parent = None
-    try:
-        old_parent = old_image.parent.resolve()
-    except OSError:
-        old_parent = None
-
-    if old_image.resolve() != destination.resolve() and old_image.exists():
-        shutil.move(str(old_image), str(destination))
-
-    parts = scientific_name.split()
-    genus = parts[0] if parts else None
-    species = parts[1] if len(parts) > 1 else None
     connection = connect(output_dir / "catalog.db")
     try:
+        catalog_path = _relocate_catalog_file(
+            connection,
+            output_dir,
+            item["image_hash"],
+            item["catalog_path"],
+            category_folder,
+            _safe_part(scientific_name, "Necunoscut"),
+        )
+
+        parts = scientific_name.split()
+        genus = parts[0] if parts else None
+        species = parts[1] if len(parts) > 1 else None
         updated_response = _update_response_identity(
             item.get("response_text", ""),
             scientific_name,
             ro_name.strip(),
             en_name.strip(),
+            old_scientific_name,
         )
         connection.execute(
             """
@@ -957,7 +1228,7 @@ def update_catalog_classification(
                 ro_name.strip(),
                 en_name.strip(),
                 updated_response,
-                store_catalog_path(destination, output_dir),
+                catalog_path,
                 item["image_hash"],
             ),
         )
@@ -965,42 +1236,13 @@ def update_catalog_classification(
 
         # Dacă specia s-a schimbat, profilul vechi rămâne orfan: nicio poză nu
         # îl mai referențiază, iar Gen Profile va crea unul nou cu numele nou.
-        # Îl ștergem doar dacă nu mai există nicio înregistrare în catalog_items
-        # cu vechiul nume (altfel am șterge profilul altor poze rămase acolo).
-        if old_scientific_name and old_scientific_name != scientific_name:
-            still_used = connection.execute(
-                "SELECT 1 FROM catalog_items WHERE scientific_name = ? LIMIT 1",
-                (old_scientific_name,),
-            ).fetchone()
-            if still_used is None:
-                connection.execute(
-                    "DELETE FROM species_profiles WHERE scientific_name = ?",
-                    (old_scientific_name,),
-                )
-                connection.commit()
-
-        # Șterge folderul vechi doar dacă a rămas gol ȘI nicio altă
-        # înregistrare din catalog nu mai indică spre el.
-        try:
-            relative_old_parent = old_parent.relative_to(output_dir.resolve())
-        except (AttributeError, OSError, ValueError):
-            relative_old_parent = None
-        old_still_referenced = False
-        if relative_old_parent is not None:
-            rows = connection.execute(
-                "SELECT catalog_path FROM catalog_items WHERE image_hash != ?",
-                (item["image_hash"],),
-            ).fetchall()
-            for (stored_path,) in rows:
-                if Path(str(stored_path)).parent == relative_old_parent:
-                    old_still_referenced = True
-                    break
-        if not old_still_referenced and old_parent is not None:
-            _remove_folder_if_empty(old_parent, output_dir.resolve())
+        _drop_orphan_profile(connection, old_scientific_name, scientific_name)
+        connection.commit()
     finally:
         connection.close()
 
-    return destination
+    return resolve_catalog_path(catalog_path, output_dir)
+
 
 def update_catalog_common_names(
     output_dir: Path,

@@ -4,9 +4,19 @@ NUM_CTX=8192
 NUM_PREDICT=3000
 THINKING=false
 # Setări pentru generărire profilului speciei (text-only, la nivel de specie)
-# Cantitate mai mică de tokenuri => generare mai rapidă.
-PROFILE_NUM_PREDICT=4000
+# PROFILE_NUM_PREDICT este un PLAFON, nu o rezervă: modelul se oprește singur
+# când termină. O valoare mai mică NU face generarea mai rapidă — taie doar
+# profilele lungi, iar contractul JSON se întrerupe și profilul se pierde.
+# Cettia cetti nu încăpea în 4000; 12000 lasă loc de manevră.
+PROFILE_NUM_PREDICT=12000
+# Buget de rezervă: dacă răspunsul se trunchiază, profilul se generează încă
+# o dată cu acest plafon, în loc să eșueze. Se încearcă o singură dată rezerva.
+PROFILE_NUM_PREDICT_RETRY=20000
 PROFILE_THINKING=false
+# Context propriu pentru GEN PROFILE. Șablonul taxonomic + contractul JSON
+# ocupă ~6k tokeni, iar răspunsul (descriere + JSON) are nevoie de restul.
+# Analiza cu imagine rămâne la NUM_CTX, pentru viteză și VRAM.
+PROFILE_NUM_CTX=32768
 # Model text-only folosit de GEN PROFILE (gol = MODEL; ex. llama3.2:3b)
 PROFILE_MODEL=muse-glimmer:latest
-LANGUAGE=ro
+LANGUAGE=en

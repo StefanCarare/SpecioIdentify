@@ -144,6 +144,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "SCOP\nIdentifică plante și animale din fotografii, verifică rezultatele și construiește un catalog cu profiluri de specie. Identificarea AI poate fi greșită; nu o folosi ca dovadă că o plantă sau ciupercă este comestibilă.\n\n"
             "1. PREGĂTIRE\nPornește Ollama și selectează un model compatibil cu imaginile. Pentru instalare, consultă README.md; pentru baza taxonomică, col/README.md și secțiunea Administrare.\n\n"
             "2. IDENTIFICARE\nAdaugă 2–3 fotografii, selectează una, alege un prompt potrivit și apasă ANALYZE. Citește Output Item și verifică specia. ANALYZE ALL procesează lista; începe cu un lot mic.\n\n"
+            "OPRIREA UNUI LOT\nCât rulează ANALYZE ALL sau GEN PROFILE ALL, lângă bara de progres apare butonul ⏹ OPRESTE; scurtătura este Ctrl+. Butonul oprește lotul după imaginea în curs, fără să închidă aplicația: imaginile deja terminate rămân salvate, iar butoanele se reactivează imediat. Poți relua oricând. Închiderea ferestrei cu X oprește totul, dar pierde sesiunea.\n\n"
             "VERIFICARE WEB (AUXILIAR)\nCâmpul de lângă butoanele 🌐 CoL și 🌐 WIKIPEDIA se completează cu specia identificată și acceptă alternative scrise manual. 🌐 CoL deschide Catalogue of Life și copiază numele în clipboard — pe pagină e doar Ctrl+V. 🌐 WIKIPEDIA deschide articolul speciei: sinonimele sunt redirecționate la numele acceptat, util când CoL nu recunoaște numele dat de model. Aceleași butoane apar și în fereastra de atenționare a verificării CoL.\n\n"
             "3. SALVARE ȘI CORECTARE\nO analiză cu identificare recunoscută de parser este catalogată automat: imaginea se copiază în output, iar analiza se salvează în baza de date. SAVE păstrează editările textului pentru o înregistrare existentă. Pentru schimbarea clasificării folosește UPDATE SPECIES, nu doar editarea textului. Dacă identificarea nu a fost recunoscută, verifică întâi catalogarea; simpla afișare a unui răspuns nu garantează salvarea.\n\n"
             "4. PROFILUL SPECIEI\nDupă verificarea speciei, folosește GEN PROFILE. Verifică descrierea din Species Profile și folosește SAVE PROFILE pentru editările tale. LOAD PROFILE reîncarcă profilul salvat; salvează modificările înainte de reîncărcare. Profilul aparține speciei, nu unei singure fotografii."
@@ -152,6 +153,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "PURPOSE\nIdentify plants and animals from photos, review the results and build a catalogue with species profiles. AI identification can be wrong; do not use it as proof that a plant or mushroom is edible.\n\n"
             "1. PREPARATION\nStart Ollama and select an image-capable model. See README.md for installation; for the taxonomy database, see col/README.md and the Admin section.\n\n"
             "2. IDENTIFICATION\nAdd 2–3 photos, select one, choose a suitable prompt and press ANALYZE. Read Output Item and verify the species. ANALYZE ALL processes the list; start with a small batch.\n\n"
+            "STOPPING A BATCH\nWhile ANALYZE ALL or GEN PROFILE ALL is running, a ⏹ STOP button appears next to the progress bar; the shortcut is Ctrl+. The button stops the batch after the image in flight, without closing the app: images already finished stay saved and the buttons become usable again immediately. You can resume at any time. Closing the window with X stops everything but loses the session.\n\n"
             "WEB VERIFICATION (AUXILIARY)\nThe field next to the 🌐 CoL and 🌐 WIKIPEDIA buttons is pre-filled with the identified species and also accepts manually typed alternatives. 🌐 CoL opens the Catalogue of Life and copies the name to the clipboard — on the page it is just Ctrl+V. 🌐 WIKIPEDIA opens the species article: synonyms redirect to the accepted name, useful when CoL does not recognise the model's name. The same helpers appear in the Catalogue of Life warning dialog.\n\n"
             "3. SAVING AND CORRECTIONS\nAn analysis whose identification is recognised by the parser is catalogued automatically: the image is copied into output and the analysis is stored in the database. SAVE keeps text edits for an existing record. Use UPDATE SPECIES to change the classification, rather than only editing the text. If identification was not recognised, check cataloguing first; a displayed response does not guarantee that it was saved.\n\n"
             "4. SPECIES PROFILE\nAfter verifying the species, use GEN PROFILE. Review the description in Species Profile and use SAVE PROFILE to keep your edits. LOAD PROFILE reloads the saved profile; save changes before reloading. A profile belongs to the species, not just one photo."
@@ -221,6 +223,205 @@ STRINGS: dict[str, dict[str, str]] = {
     },
     "btn_quick_catalog": {"ro": "📁 QUICK CATALOG", "en": "📁 QUICK CATALOG"},
     "btn_update_species": {"ro": "UPDATE SPECIES", "en": "UPDATE SPECIES"},
+    "confirm_selection_used": {
+        "ro": "ATENȚIE: se va folosi doar selecția — {chosen} din {total} "
+              "imagini încărcate.",
+        "en": "NOTE: only the selection will be used — {chosen} of {total} "
+              "loaded images.",
+    },
+    "status_selection_scope": {
+        "ro": "{chosen} din {total} imagini selectate — loturile vor folosi "
+              "doar selecția (Ctrl / Shift pentru a alege).",
+        "en": "{chosen} of {total} images selected — batch commands will use "
+              "the selection only (Ctrl / Shift to choose).",
+    },
+    "btn_stop": {"ro": "⏹ OPRESTE", "en": "⏹ STOP"},
+    "btn_stopping": {"ro": "… se oprește", "en": "… stopping"},
+    "status_stopping": {
+        "ro": "Se oprește după imaginea curentă…",
+        "en": "Stopping after the current image…",
+    },
+    "batch_stopped": {
+        "ro": "Lot oprit: {done} din {total} imagini procesate.\n\n"
+              "Poți relua când vrei; cele terminate rămân salvate.",
+        "en": "Batch stopped: {done} of {total} images processed.\n\n"
+              "You can resume at any time; finished ones stay saved.",
+    },
+    "status_stopped": {
+        "ro": "Lot oprit: {done} din {total} — {duration}",
+        "en": "Batch stopped: {done} of {total} — {duration}",
+    },
+    "btn_names_from_col": {"ro": "🌐 NUME DIN CoL", "en": "🌐 NAMES FROM CoL"},
+    "btn_profiles_all": {"ro": "TOATE ({n})", "en": "ALL ({n})"},
+    "btn_profiles_missing": {
+        "ro": "DOAR FĂRĂ PROFIL ({n})",
+        "en": "ONLY WITHOUT PROFILE ({n})",
+    },
+    "profile_scope_title": {
+        "ro": "Generate all species profiles",
+        "en": "Generate all species profiles",
+    },
+    "profile_scope_intro": {
+        "ro": "{saved} din {total} specii identificate au deja un profil salvat.\n\n"
+              "Ce alegi?",
+        "en": "{saved} of {total} identified species already have a saved "
+              "profile.\n\nWhat do you want to do?",
+    },
+    "profile_scope_note": {
+        "ro": "Regenerarea suprascrie profilele existente, chiar dacă sunt "
+              "corecte.\nModelul se poate schimba și din dropdown-ul MODEL. "
+              "Procesul poate dura câteva minute.",
+        "en": "Regenerating overwrites the existing profiles, even when they "
+              "are fine.\nThe model can also be changed in the MODEL "
+              "dropdown. The process may take a few minutes.",
+    },
+    "profiles_done_title": {
+        "ro": "Profile de specie finalizate",
+        "en": "Species profiles complete",
+    },
+    "profiles_errors_title": {
+        "ro": "Profile de specie finalizate cu erori",
+        "en": "Species profiles finished with errors",
+    },
+    "profiles_done": {
+        "ro": "Toate cele {total} profile au fost generate cu succes.\n\n"
+              "Durată totală: {duration}",
+        "en": "All {total} species profiles were generated successfully.\n\n"
+              "Total duration: {duration}",
+    },
+    "profiles_reserve": {
+        "ro": "{n} specie au avut nevoie de bugetul de rezervă "
+              "({tokens} tokeni). Ridică PROFILE_NUM_PREDICT la {tokens} "
+              "ca să nu mai fie nevoie de reîncercare.",
+        "en": "{n} species needed the reserve budget ({tokens} tokens). "
+              "Raise PROFILE_NUM_PREDICT to {tokens} to avoid the retry.",
+    },
+    "batch_done_title": {"ro": "Analiză finalizată", "en": "Batch complete"},
+    "batch_errors_title": {
+        "ro": "Analiză finalizată cu erori",
+        "en": "Batch finished with errors",
+    },
+    "batch_done": {
+        "ro": "Toate cele {total} imagini au fost analizate cu succes.\n\n"
+              "Durată totală: {duration}",
+        "en": "All {total} images were analyzed successfully.\n\n"
+              "Total duration: {duration}",
+    },
+    "summary_completed": {"ro": "Finalizate: {done}/{total}", "en": "Completed: {done}/{total}"},
+    "summary_errors": {"ro": "Erori: {n}", "en": "Errors: {n}"},
+    "summary_duration": {"ro": "Durată totală: {duration}", "en": "Total duration: {duration}"},
+    "confirm_gen_profile": {"ro": "Vei genera profilul speciei:\n\n{0}\n\nProfilul se bazează pe cunoștințele modelului despre specia în general, nu pe fotografia curentă.\n\nModel (doar text): {1}\n\nContinui?", "en": "You will generate the profile of the species:\n\n{0}\n\nThe profile is based on the model's general knowledge of the species, not on the current photo.\n\nModel (text-only): {1}\n\nContinue?"},
+    "confirm_gen_profiles_all": {"ro": "Vei genera profilul pentru {0} specii (din {1} identificate).\n\nPoți alege modelul și din dropdown-ul MODEL.\nProcesul poate dura câteva minute pentru un model local.\n\nContinui?", "en": "You will generate the profile for {0} species (out of {1} identified).\n\nYou can choose the model in the MODEL dropdown.\nThe process may take a few minutes for a local model.\n\nContinue?"},
+    "confirm_import_vernacular": {"ro": "Se importă denumirile populare din arhiva CoL (eng + rom). Actualizează DOAR câmpurile goale, nu strică datele manuale. Continui?", "en": "The popular names are imported from the CoL archive (en + ro). Only empty fields are filled in; manual data is kept. Continue?"},
+    "confirm_rebuild_taxonomy": {"ro": "Se reconstruiește taxonomy.db din:\n\n{0}\n\nOperația poate dura câteva minute. Continui?", "en": "taxonomy.db will be rebuilt from:\n\n{0}\n\nThis may take a few minutes. Continue?"},
+    "confirm_rerun_after_update": {"ro": "Încadrarea a fost actualizată. Vrei să rulezi din nou promptul pentru a regenera descrierea?", "en": "The record was updated. Run the prompt again to regenerate the description?"},
+    "err_cannot_open_folder": {"ro": "Nu pot deschide folderul:\n{0}\n\n{1}", "en": "Cannot open the folder:\n{0}\n\n{1}"},
+    "err_cannot_open_readme": {"ro": "Nu pot deschide ghidul:\n{0}\n\n{1}", "en": "Cannot open the guide:\n{0}\n\n{1}"},
+    "err_cannot_prepare_rules": {"ro": "Nu pot pregăti regulile:\n{0}", "en": "Cannot prepare the rules:\n{0}"},
+    "err_import_col": {"ro": "Import CoL eșuat:\n\n{0}", "en": "CoL import failed:\n\n{0}"},
+    "err_json_invalid": {"ro": "JSON invalid:\n\n{0}", "en": "Invalid JSON:\n\n{0}"},
+    "info_analysis_done_body": {"ro": "Analiza a fost finalizată pentru:\n\n{0}\n\nDurată: {1}", "en": "Analysis finished for:\n\n{0}\n\nDuration: {1}"},
+    "info_import_col_done": {"ro": "Import CoL gata: {0} taxoni actualizați (en: {1}, ro: {2}).", "en": "CoL import done: {0} taxa updated (en: {1}, ro: {2})."},
+    "info_no_profile_saved": {"ro": "Nu există profil salvat pentru:\n\n{0}\n\nApasă GEN PROFILE pentru a genera unul.", "en": "No saved profile for:\n\n{0}\n\nPress GEN PROFILE to generate one."},
+    "info_not_in_catalog": {"ro": "Imaginea nu este în catalog. Rulează ANALYZE mai întâi pentru a o identifica.", "en": "The image is not in the catalog. Run ANALYZE first to identify it."},
+    "info_profile_generated": {"ro": "Profilul a fost generat pentru:\n\n{0}\n\nDurată: {1}", "en": "The profile was generated for:\n\n{0}\n\nDuration: {1}"},
+    "info_species_unknown_run": {"ro": "Specia nu este încă identificată. Rulează ANALYZE pentru a o identifica.", "en": "The species is not identified yet. Run ANALYZE to identify it."},
+    "status_added_images": {"ro": "S-au adăugat {0} imagine/imagini.", "en": "Added {0} image(s)."},
+    "status_base_elapsed": {"ro": "{0} — {1}", "en": "{0} — {1}"},
+    "status_batch_completed": {"ro": "Lot finalizat: {0}/{1} — {2}", "en": "Batch completed: {0}/{1} — {2}"},
+    "status_batch_finished": {"ro": "Lot încheiat: {0}/{1}, erori: {2} — {3}", "en": "Batch finished: {0}/{1}, errors: {2} — {3}"},
+    "status_catalog_updated_name": {"ro": "Catalog actualizat: {0}", "en": "Catalog updated: {0}"},
+    "status_catalog_updated_pending": {"ro": "Catalog actualizat; analiză în așteptare: {0}", "en": "Catalog updated; analysis pending: {0}"},
+    "status_done": {"ro": "Gata — {0}", "en": "Done — {0}"},
+    "status_generating_profile": {"ro": "Generează profilul speciei: {0}...", "en": "Generating species profile: {0}..."},
+    "status_generating_profile_n": {"ro": "Generează profilul speciei {0} / {1}: {2}...", "en": "Generating species profile {0} / {1}: {2}..."},
+    "status_generating_profiles": {"ro": "Generează profilele de specie: 0 / {0}...", "en": "Generating species profiles: 0 / {0}..."},
+    "status_loaded": {"ro": "Încărcat: {0}", "en": "Loaded: {0}"},
+    "status_processing_batch": {"ro": "Procesare lot: 0 / {0}", "en": "Processing batch: 0 / {0}"},
+    "status_profile_generated_short": {"ro": "Profil de specie generat: {0}", "en": "Species profile generated: {0}"},
+    "status_profile_generated_time": {"ro": "Profil de specie generat: {0} — {1}", "en": "Species profile generated: {0} — {1}"},
+    "status_profile_loaded": {"ro": "Profil de specie încărcat: {0}", "en": "Species profile loaded: {0}"},
+    "status_profile_model": {"ro": "Model pentru profiluri: {0}", "en": "Profile model: {0}"},
+    "status_profile_saved": {"ro": "Profil de specie salvat: {0}", "en": "Species profile saved: {0}"},
+    "status_profiles_completed": {"ro": "Profile de specie finalizate: {0}/{1} — {2}", "en": "Species profiles completed: {0}/{1} — {2}"},
+    "status_profiles_errors": {"ro": "Profile de specie: {0}/{1} finalizate, erori: {2} — {3}", "en": "Species profiles: {0}/{1} completed, errors: {2} — {3}"},
+    "status_prompt_created": {"ro": "Prompt nou creat: {0}", "en": "New prompt created: {0}"},
+    "status_prompt_loaded": {"ro": "Prompt încărcat: {0}", "en": "Prompt loaded: {0}"},
+    "status_prompt_not_found": {"ro": "Prompt negăsit: {0}", "en": "Prompt not found: {0}"},
+    "status_prompt_updated": {"ro": "Prompt actualizat: {0}", "en": "Prompt updated: {0}"},
+    "status_result_not_saved": {"ro": "Rezultatul a fost afișat, dar nu a putut fi salvat: {0}", "en": "Result displayed, but could not be saved: {0}"},
+    "status_saved_name": {"ro": "Salvat: {0}", "en": "Saved: {0}"},
+    "status_selected": {"ro": "Selectat: {0}", "en": "Selected: {0}"},
+    "status_step_completed": {"ro": "Finalizat {0} / {1}: {2}", "en": "Completed {0} / {1}: {2}"},
+    "status_step_error": {"ro": "Eroare {0} / {1}: {2}", "en": "Error {0} / {1}: {2}"},
+    "err_analysis_failed": {"ro": "Analiza a eșuat", "en": "Analysis failed"},
+    "err_catalog_update": {"ro": "Actualizarea catalogului a eșuat", "en": "Catalog update failed"},
+    "err_create_prompt": {"ro": "Eroare la crearea promptului", "en": "Create prompt error"},
+    "err_image": {"ro": "Eroare imagine", "en": "Image error"},
+    "err_initial_config": {"ro": "Configurare inițială", "en": "Initial configuration"},
+    "err_no_zip": {"ro": "Nicio arhivă .zip în col/.", "en": "No .zip archive in col/."},
+    "err_parse_rules_title": {"ro": "Reguli parsare", "en": "Parsing rules"},
+    "err_prompt_exists_title": {"ro": "Promptul există deja", "en": "Prompt already exists"},
+    "err_save": {"ro": "Eroare la salvare", "en": "Save error"},
+    "err_species_profile": {"ro": "Eroare profil de specie", "en": "Species profile error"},
+    "err_update_prompt": {"ro": "Eroare la actualizarea promptului", "en": "Update prompt error"},
+    "info_analysis_done_title": {"ro": "Analiză finalizată", "en": "Analysis complete"},
+    "info_analyze_before_gen_profile": {"ro": "Analizează imaginea înainte de a genera profilul speciei.", "en": "Analyze the image before generating the species profile."},
+    "info_analyze_before_reclassify": {"ro": "Analizează imaginea înainte de reclasificare.", "en": "Analyze the image before reclassifying."},
+    "info_analyze_before_save_profile": {"ro": "Analizează imaginea înainte de a salva profilul.", "en": "Analyze the image before saving the profile."},
+    "info_enter_prompt": {"ro": "Introdu mai întâi un prompt.", "en": "Enter a prompt first."},
+    "info_image_not_cataloged": {"ro": "Imaginea nu este încă în catalog.", "en": "The image is not in the catalog yet."},
+    "info_profile_done_title": {"ro": "Profil finalizat", "en": "Profile complete"},
+    "info_select_image": {"ro": "Selectează mai întâi o imagine.", "en": "Select an image first."},
+    "info_select_prompt": {"ro": "Selectează mai întâi un prompt.", "en": "Select a prompt first."},
+    "info_species_unknown": {"ro": "Specia nu este încă identificată.", "en": "The species is not identified yet."},
+    "status_images_cleared": {"ro": "Imagini șterse", "en": "Images cleared"},
+    "status_profile_failed": {"ro": "Generarea profilului a eșuat", "en": "Species profile generation failed"},
+    "status_ready_idle": {"ro": "Gata", "en": "Ready"},
+    "status_species_prompt_updated": {"ro": "Promptul speciei a fost actualizat", "en": "Species prompt updated"},
+    "status_working": {"ro": "Se lucrează...", "en": "Muse Glimmer is working..."},
+    "title_admin": {"ro": "Administrare", "en": "Administration"},
+    "title_catalog": {"ro": "Catalog", "en": "Catalog"},
+    "title_catalog_updated": {"ro": "Catalog actualizat", "en": "Catalog updated"},
+    "title_error": {"ro": "Eroare", "en": "Error"},
+    "title_gen_profile": {"ro": "Generează profilul speciei", "en": "Generate species profile"},
+    "title_gen_profiles_all": {"ro": "Generează toate profilele de specie", "en": "Generate all species profiles"},
+    "title_photo_info": {"ro": "Info poză", "en": "Photo info"},
+    "title_save": {"ro": "Salvare", "en": "Save"},
+    "title_species_profile": {"ro": "Profil de specie", "en": "Species profile"},
+    "title_update_species": {"ro": "Actualizare specie", "en": "Update species"},
+    "warn_add_image_first": {"ro": "Adaugă mai întâi cel puțin o imagine.", "en": "Add at least one image first."},
+    "warn_catalog_folder_gone": {"ro": "Folderul catalogului nu mai există.", "en": "The catalog folder no longer exists."},
+    "warn_empty_prompt_title": {"ro": "Prompt gol", "en": "Empty prompt"},
+    "warn_invalid_name_title": {"ro": "Nume invalid", "en": "Invalid name"},
+    "warn_no_image_title": {"ro": "Nicio imagine", "en": "No image"},
+    "warn_no_images_title": {"ro": "Nicio imagine", "en": "No images"},
+    "warn_no_profile_to_save": {"ro": "Nu există profil de salvat.", "en": "There is no profile to save."},
+    "warn_no_prompt_selected_title": {"ro": "Niciun prompt selectat", "en": "No prompt selected"},
+    "warn_no_prompt_title": {"ro": "Niciun prompt", "en": "No prompt"},
+    "warn_no_result_to_save": {"ro": "Nu există rezultat de salvat.", "en": "There is no result to save."},
+    "warn_nothing_to_save_title": {"ro": "Nimic de salvat", "en": "Nothing to save"},
+    "warn_prompt_empty_body": {"ro": "Promptul nu poate fi gol.", "en": "The prompt cannot be empty."},
+    "warn_prompt_name_empty": {"ro": "Numele promptului nu poate fi gol.", "en": "The prompt name cannot be empty."},
+    "warn_sci_name_required": {"ro": "Numele științific este obligatoriu.", "en": "The scientific name is required."},
+    "form_names_confirm": {
+        "ro": "Baza de date conține denumiri populare pentru „{name}”:\n\n"
+              "română: {ro}\nengleză: {en}\n\n"
+              "Le completez în formular?",
+        "en": "The database has common names for “{name}”:\n\n"
+              "Romanian: {ro}\nEnglish: {en}\n\n"
+              "Fill them in?",
+    },
+    "form_names_confirm_one": {
+        "ro": "Baza de date conține denumirea populară pentru „{name}”:\n\n"
+              "{lang}: {value}\n\nO completez în formular?",
+        "en": "The database has a common name for “{name}”:\n\n"
+              "{lang}: {value}\n\nFill it in?",
+    },
+    "form_names_extra": {
+        "ro": "\n\nAlte variante: {variants}",
+        "en": "\n\nOther variants: {variants}",
+    },
     "btn_open_col": {"ro": "🌐 CoL", "en": "🌐 CoL"},
     "btn_open_wikipedia": {"ro": "🌐 WIKIPEDIA", "en": "🌐 WIKIPEDIA"},
     "btn_gen_profile": {"ro": "GEN PROFILE", "en": "GEN PROFILE"},
@@ -400,6 +601,35 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "🌐 Update in catalogue...",
     },
     "col_btn_later": {"ro": "Mai târziu", "en": "Later"},
+
+    # ---- Raport ANALYZE ALL: specii absente din baza de date ----
+    "col_batch_title": {
+        "ro": "Specii absente din baza de date",
+        "en": "Species missing from the database",
+    },
+    "col_batch_intro": {
+        "ro": (
+            "{n} specii identificate în acest lot nu au fost găsite în "
+            "baza de date (Catalogue of Life).\nAlege o specie din listă "
+            "pentru a-i deschide imaginile și a le verifica una câte una."
+        ),
+        "en": (
+            "{n} species identified in this batch were not found in the "
+            "database (Catalogue of Life).\nPick a species from the list "
+            "to open its images and verify them one by one."
+        ),
+    },
+    "col_batch_species": {"ro": "Specie", "en": "Species"},
+    "col_batch_images": {"ro": "imagini", "en": "images"},
+    "col_batch_next": {
+        "ro": "Următoarea ▶",
+        "en": "Next ▶",
+    },
+    "col_batch_done": {
+        "ro": "Marchează ca verificată",
+        "en": "Mark as checked",
+    },
+    "col_batch_close": {"ro": "Închide", "en": "Close"},
 
     # ---- Web lookups (butoanele 🌐 CoL / 🌐 WIKIPEDIA) ----
     "web_title": {"ro": "Wikipedia", "en": "Wikipedia"},

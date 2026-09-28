@@ -203,6 +203,65 @@ ROMANIAN_COUNTIES = [
     "Vrancea",
 ]
 
+
+# ============================================================
+# ANALYZE ALL — species that are missing from the taxonomy database
+# ============================================================
+
+def collect_batch_unverified_species(
+    image_names,
+    output_dir: Path = None,
+) -> dict:
+    """Group the batch species that are not verified in Catalogue of Life.
+
+    ANALYZE ALL runs unattended, so the per-image CoL dialog never appears.
+    This walks the freshly analyzed images instead and returns
+
+        {scientific_name: {"images": [...], "status": ..., "accepted": ...}}
+
+    so the caller can show a single list the user can walk through, image by
+    image. A species the user already corrected through UPDATE SPECIES is
+    never reported: the manual decision is the authoritative one.
+
+    Returns an empty dict when every species is verified (or undecidable).
+    """
+    output_dir = Path(output_dir) if output_dir is not None else OUTPUT_DIR
+    report: dict = {}
+    seen: set = set()
+
+    for image_name in image_names:
+        if image_name in seen:
+            continue
+        seen.add(image_name)
+        try:
+            item = get_catalog_item(Path(image_name), output_dir)
+        except Exception:
+            continue
+        if not item or item.get("manual_override"):
+            continue
+        name = (item.get("scientific_name") or "").strip()
+        if not name or name in ("Necunoscut", "Unknown"):
+            continue
+        entry = report.get(name)
+        if entry is None:
+            entry = report[name] = {"images": [], "status": "", "accepted": None}
+        entry["images"].append(Path(image_name).name)
+        if entry["status"]:
+            continue  # already validated this species
+        try:
+            result = validate_species(name, (item.get("category") or "").strip())
+        except Exception:
+            continue
+        entry["status"] = result.get("status") or ""
+        accepted = result.get("accepted") or {}
+        entry["accepted"] = accepted.get("name") or None
+
+    return {
+        name: entry for name, entry in report.items()
+        if entry["status"] and entry["status"] != "exact"
+    }
+
+
 # ============================================================
 # SETTINGS
 # ============================================================
@@ -304,9 +363,187 @@ def fast_predict_limit(value: str | None, configured: int) -> int:
     return min(configured, ceiling) if configured > 0 else ceiling
 
 
+class _RelayoutOnVisibility:
+    """Mixin: tells a container when this widget is packed or unpacked.
+
+    The analysis code shows and hides the progress bars with plain
+    ``pack()``/``pack_forget()`` calls in a dozen places. Listening to
+    <Map>/<Unmap> does not work here: a hidden group is unmapped, so its
+    children never fire those events. Overriding the two pack methods keeps
+    every existing call site untouched and still lets the bar re-flow.
+    """
+
+    on_visibility_change = None
+
+    def pack(self, *args, **kwargs):
+        result = super().pack(*args, **kwargs)
+        self._notify_visibility()
+        return result
+
+    def pack_forget(self):
+        result = super().pack_forget()
+        self._notify_visibility()
+        return result
+
+    def _notify_visibility(self) -> None:
+        callback = self.on_visibility_change
+        if callback is not None:
+            self.after_idle(callback)
+
+
+class _FlowProgressBar(_RelayoutOnVisibility, ttk.Progressbar):
+    """Progressbar that re-flows the button bar when shown or hidden."""
+
+
+class _FlowProgressFrame(_RelayoutOnVisibility, ttk.Frame):
+    """Frame that re-flows the button bar when shown or hidden."""
+
+
+# ============================================================
+# BUTTON BAR WITH REFLOW
+# ============================================================
+
+class _FlowBar(ttk.Frame):
+    """Places button groups on rows that adapt to the window width.
+
+    Tk's pack never wraps: with thirteen wide buttons the groups packed with
+    side="right" (GEN PROFILE, LOAD PROFILE, SAVE PROFILE, GEN PROFILE ALL)
+    were allocated whatever width was left, which was nothing, so they simply
+    disappeared instead of being clipped. This container measures the groups
+    and moves the ones that no longer fit onto a second row, so every button
+    stays reachable at any window width.
+
+    The groups are positioned with grid on purpose: ``pack(in_=...)`` does NOT
+    re-parent a widget in Tk, it only borrows another container's cavity, so a
+    nested pack layout leaves the groups outside the bar where the surrounding
+    panels paint over them. Grid only changes row/column, so the groups keep
+    their parent, their state (disabled/enabled) and their widgets.
+
+    While everything fits on a single row the last group keeps the old
+    flush-right look, so the bar is unchanged at the default window size.
+    """
+
+    GROUP_BORDER = "#b9c0cc"
+    GROUP_BORDER_ACTIVE = "#8b95a3"
+    LINE_GAP = 4
+
+
+    def __init__(self, master, **kwargs) -> None:
+        super().__init__(master, **kwargs)
+        # Each entry: [group, padx, dynamic, shown]
+        self._groups: list[list] = []
+        self._plan: tuple | None = None
+        self.bind("<Configure>", self._on_configure, add="+")
+
+    def add(
+        self,
+        group: tk.Widget,
+        padx: tuple = (0, 0),
+        dynamic: bool = False,
+    ) -> None:
+        """Registers a group. The group must be a child of this container.
+
+        A *dynamic* group is shown or hidden by its own contents (the progress
+        bars are packed/packed_forget all over the analysis code), so it only
+        takes part in the layout while one of its children is managed.
+        """
+        self._groups.append([group, padx, dynamic, True])
+        self.relayout(force=True)
+
+    def row_count(self) -> int:
+        return len(self._plan) if self._plan else 0
+
+    def groups(self) -> list[tk.Widget]:
+        return [entry[0] for entry in self._groups]
+
+    def _on_configure(self, event) -> None:
+        if event.widget is self:
+            self.relayout()
+
+    def _is_shown(self, entry: list) -> bool:
+        group, _, dynamic, shown = entry
+        if not shown:
+            return False
+        if not dynamic:
+            return True
+        children = group.winfo_children()
+        if not children:
+            return False
+        return any(child.winfo_manager() for child in children)
+
+    def _compute_plan(self, available: int) -> tuple:
+        """Greedy wrap: a group moves down only when it no longer fits."""
+        rows: list[tuple] = []
+        current: list[int] = []
+        used = 0
+        for index, entry in enumerate(self._groups):
+            if not self._is_shown(entry):
+                continue
+            group, padx, _, _ = entry
+            width = group.winfo_reqwidth() + padx[0] + padx[1]
+            if current and used + width > available:
+                rows.append(tuple(current))
+                current, used = [], 0
+            current.append(index)
+            used += width
+        if current:
+            rows.append(tuple(current))
+        return tuple(rows)
+
+    def relayout(self, force: bool = False) -> None:
+        available = self.winfo_width()
+        if available <= 1:
+            return  # not laid out yet; <Configure> will call again
+        plan = self._compute_plan(available)
+        if plan == self._plan and not force:
+            return
+        self._plan = plan
+
+        # Groups are positioned with place(), not grid: grid shares one set of
+        # column widths across every row, so a group placed on a second line
+        # would start at the x of the widest group above it instead of right
+        # after its neighbour. place() keeps every group a child of this bar
+        # (no re-parenting, widgets and their state survive) while allowing a
+        # true left-to-right flow, and the bar's height is set by hand.
+        for entry in self._groups:
+            entry[0].place_forget()
+
+        single_row = len(plan) == 1
+        y = 0
+        for line in plan:
+            x = 0
+            line_height = 0
+            for position, index in enumerate(line):
+                group, padx, _, _ = self._groups[index]
+                width = group.winfo_reqwidth()
+                height = group.winfo_reqheight()
+                offset = x + padx[0]
+                if single_row and position == len(line) - 1:
+                    # Preserve the original flush-right profile group.
+                    offset = max(0, available - width - padx[1])
+                group.place(x=offset, y=y, width=width, height=height)
+                x += width + padx[0] + padx[1]
+                line_height = max(line_height, height)
+            y += line_height + self.LINE_GAP
+
+        # place() does not grow the container, so the height is imposed here.
+        self.configure(height=max(0, y - self.LINE_GAP))
+        self.pack_propagate(False)
+
+
 # ============================================================
 # MAIN WINDOW
 # ============================================================
+
+def _listbox_text(box, index: int) -> str:
+    """The text of one listbox row.
+
+    tk.Listbox has no getter for a single item (item() is a Treeview API), so
+    the list is read and sliced. Only used on short image lists, and only
+    when a prefix actually changed.
+    """
+    return box.get(index)
+
 
 class MainWindow:
 
@@ -372,12 +609,47 @@ class MainWindow:
         # de tokenuri => răspuns mai rapid, la exactitudine.
         # ----------------------------------------------------
 
+        # PROFILE_NUM_PREDICT este o PLAFON, nu o rezervă: Ollama se oprește
+        # la finalul natural al răspunsului. O valoare mai mică nu face
+        # generarea mai rapidă — taie doar profilele lungi, iar contractul
+        # JSON rămâne incomplet, deci profilul e pierdut.
         try:
             self.profile_num_predict = int(
-                settings.get("PROFILE_NUM_PREDICT", "4000")
+                settings.get("PROFILE_NUM_PREDICT", "12000")
             )
         except ValueError:
-            self.profile_num_predict = 4000
+            self.profile_num_predict = 12000
+
+        # Bugetul de rezervă: când răspunsul se trunchiază, profilul este
+        # regenerat o singură dată cu acest plafon, în loc de a eșua.
+        try:
+            self.profile_num_predict_retry = int(
+                settings.get("PROFILE_NUM_PREDICT_RETRY", "20000")
+            )
+        except ValueError:
+            self.profile_num_predict_retry = 20000
+        # Speciile care au avut nevoie de rezervă: raportate la final, ca să
+        # fie vizibil când plafonul de bază e prea mic.
+        self.profile_retried = 0
+
+        # Profilul de specie trimite doar text, dar șablonul taxonomic
+        # (~21k caractere) + contractul JSON (~3.7k) ocupă aproape tot
+        # contextul, iar răspunsul (descriere + JSON) nu mai încapea.
+        # De aceea are un context propriu, independent de analiza cu
+        # imagine, care rămâne la NUM_CTX pentru viteză și VRAM.
+        try:
+            self.profile_num_ctx = int(
+                settings.get("PROFILE_NUM_CTX", "32768")
+            )
+        except ValueError:
+            self.profile_num_ctx = 32768
+
+        # Orice plafon mai mare decât spațiul rămas în context ar produce
+        # aceeași trunchiere, doar mai lent.
+        self.profile_num_predict_retry = min(
+            self.profile_num_predict_retry,
+            max(self.profile_num_predict, self.profile_num_ctx - 8000),
+        )
 
         try:
             self.profile_thinking = (
@@ -401,6 +673,10 @@ class MainWindow:
         self.image_paths = []
         self.image_status = {}
         self.image_locations = {}
+        # Cooperative stop: set by the STOP button or Ctrl+. and read at the
+        # top of every batch loop. False means "no batch running".
+        self._cancel_batch = False
+        self._batch_running = False
         self.image_path: Path | None = None
         self.image_metadata = {}
 
@@ -458,7 +734,7 @@ class MainWindow:
         # îl (re)creăm la pornire ca dialogul să aibă mereu destinația.
         (APP_ROOT / "name_sources").mkdir(parents=True, exist_ok=True)
 
-        self.set_status("Ready")
+        self.set_status(t("status_ready_idle"))
 
         # Verificare la pornire: ce lipsește față de un setup complet?
         # Arată un singur popup informativ (nu la fiecare pornire dacă
@@ -468,6 +744,45 @@ class MainWindow:
     # ========================================================
     # UI
     # ========================================================
+
+    def _flow_group(
+        self,
+        padx: tuple = (0, 0),
+        dynamic: bool = False,
+    ) -> ttk.Frame:
+        """Creates an outlined group for the button bar.
+
+        The blocks (analysis, web lookups, progress, species profile) get a
+        thin border so they read as separate units instead of one long row of
+        buttons. The border colours live on _FlowBar, so the look is tuned in
+        one place.
+
+        A *dynamic* group only takes part in the layout while it has a visible
+        child — that is how the progress group stays out of the bar until an
+        analysis actually shows a progress bar.
+        """
+        frame = tk.Frame(
+            self.button_bar,
+            highlightthickness=1,
+            highlightbackground=_FlowBar.GROUP_BORDER,
+            highlightcolor=_FlowBar.GROUP_BORDER_ACTIVE,
+            bd=0,
+        )
+        inner = ttk.Frame(frame, padding=(6, 3))
+        inner.pack(fill="both", expand=True)
+        self.button_bar.add(frame, padx=padx, dynamic=dynamic)
+        return inner
+
+    def _progress_visibility_changed(self) -> None:
+        """A progress bar appeared or disappeared: re-flow the button bar.
+
+        The group is only in the layout while one of its children is packed,
+        so the space it needs is reserved before the bar becomes visible
+        instead of pushing the following group over.
+        """
+        bar = getattr(self, "button_bar", None)
+        if bar is not None:
+            bar.relayout(force=True)
 
     def build_ui(self):
 
@@ -544,7 +859,11 @@ class MainWindow:
         self.image_listbox = tk.Listbox(
             list_frame,
             height=5,
-            selectmode=tk.SINGLE,
+            # EXTENDED gives the Explorer semantics for free through Tk's own
+            # class bindings: plain click keeps one row, Ctrl toggles, Shift
+            # extends. The selection is the subset for batch work; the photo
+            # still follows the row that was actually clicked.
+            selectmode=tk.EXTENDED,
             font=("Segoe UI", 10)
         )
 
@@ -569,10 +888,34 @@ class MainWindow:
             yscrollcommand=image_scroll.set
         )
 
+        # Ctrl+. is the browser's "stop loading" convention, and unlike Esc it
+        # is not already taken by the dialogs. It cannot fire by accident.
+        self.root.bind_all(
+            "<Control-period>", self.cancel_batch, add="+"
+        )
+
         self.image_listbox.bind(
             "<<ListboxSelect>>",
             self.on_image_selected
         )
+        # Records the row the pointer hit: curselection() reports the set, not
+        # the row acted on. Bound with add="+" so the Tk class binding still
+        # performs the Ctrl / Shift selection.
+        self.image_listbox.bind(
+            "<Button-1>",
+            self.on_image_list_clicked,
+            add="+"
+        )
+
+        # Keyboard navigation: <<ListboxSelect>> is not delivered when the
+        # highlight moves with the arrow keys, so the keys are handled here
+        # and the photo is loaded once the listbox has moved its selection.
+        for key in ("<Up>", "<Down>", "<Prior>", "<Next>", "<Home>", "<End>"):
+            self.image_listbox.bind(
+                key,
+                self._on_image_navigate,
+                add="+"
+            )
 
         # ----------------------------------------------------
         # Image buttons
@@ -975,12 +1318,16 @@ class MainWindow:
             pady=(0, 10)
         )
 
+        # Butoanele se reflow-ează pe linii noi când fereastra îngustează
+        # (pack nu are reflow, iar grupul din dreapta dispărea complet).
+        self.button_bar = _FlowBar(button_frame)
+        self.button_bar.pack(side="top", fill="x")
+
         # ----------------------------------------------------
         # Grup stânga: fluxul ITEM (analiza imaginii)
         # ----------------------------------------------------
 
-        analysis_buttons = ttk.Frame(button_frame)
-        analysis_buttons.pack(side="left")
+        analysis_buttons = self._flow_group()
 
         self.analyze_button = ttk.Button(
             analysis_buttons,
@@ -1043,8 +1390,14 @@ class MainWindow:
         # Grup mijloc: verificare web (CoL + Wikipedia)
         # ----------------------------------------------------
 
-        web_buttons = ttk.Frame(button_frame)
-        web_buttons.pack(side="left", padx=(16, 0))
+        web_buttons = self._flow_group(padx=(6, 0))
+
+        # Progress group: created here, still empty, so it keeps its place in
+        # the flow between the web lookups and the species profile. The bars
+        # themselves are built further down, with the rest of the progress
+        # code. Being dynamic, the group takes no space while both bars are
+        # hidden, so the bar never reserves an empty row.
+        progress_row = self._flow_group(padx=(6, 0), dynamic=True)
 
         # Câmp editabil: se preumplește cu specia curentă, dar primește
         # și alternative scrise de utilizator (ex. un sinonim de verificat).
@@ -1070,8 +1423,7 @@ class MainWindow:
         # Grup dreapta: fluxul SPECIES PROFILE
         # ----------------------------------------------------
 
-        profile_buttons = ttk.Frame(button_frame)
-        profile_buttons.pack(side="right")
+        profile_buttons = self._flow_group(padx=(6, 0))
 
         self.generate_profile_button = ttk.Button(
             profile_buttons,
@@ -1137,12 +1489,32 @@ class MainWindow:
         # ----------------------------------------------------
         # Progress
         # ----------------------------------------------------
+        # The group itself was created with the other blocks, so it sits
+        # between the web lookups and the species profile.
+        # Stop lives in its own holder, packed *before* the progress bar so it
+        # ends up to its right — the last thing in the group, immediately
+        # before the row wraps to GEN PROFILE. Inside the batch group it
+        # would have landed between the two progress bars.
+        #
+        # The holder stays managed but is empty when idle, so it costs no
+        # width between batches.
+        self.cancel_holder = ttk.Frame(progress_row)
+        self.cancel_holder.pack(side="right")
 
-        self.progress = ttk.Progressbar(
-            button_frame,
+        self.cancel_batch_button = ttk.Button(
+            self.cancel_holder,
+            text=t("btn_stop"),
+            command=self.cancel_batch,
+        )
+        # Shown only while a batch runs.
+        self.cancel_batch_button.pack_forget()
+
+        self.progress = _FlowProgressBar(
+            progress_row,
             mode="indeterminate",
             length=150
         )
+        self.progress.on_visibility_change = self._progress_visibility_changed
 
         self.progress.pack(
             side="right"
@@ -1152,8 +1524,11 @@ class MainWindow:
         # Batch progress group
         # ----------------------------------------------------
 
-        self.batch_progress_frame = ttk.Frame(
-            button_frame
+        self.batch_progress_frame = _FlowProgressFrame(
+            progress_row
+        )
+        self.batch_progress_frame.on_visibility_change = (
+            self._progress_visibility_changed
         )
 
         self.batch_progress_label = ttk.Label(
@@ -1428,6 +1803,10 @@ class MainWindow:
             "Selectează o imagine; profilul speciei va apărea aici.",
             saveable=False,
         )
+
+        # Primul calcul al rândurilor după ce toate etichetele au fost puse
+        # (lățimile se schimbă odată cu fontul și cu limba).
+        self.button_bar.relayout(force=True)
 
     def configure_rich_text(
         self,
@@ -1990,8 +2369,8 @@ class MainWindow:
 
         if not text:
             messagebox.showwarning(
-                "Empty prompt",
-                "The prompt cannot be empty.",
+                t("warn_empty_prompt_title"),
+                t("warn_prompt_empty_body"),
                 parent=self.root,
             )
             return
@@ -2004,14 +2383,14 @@ class MainWindow:
             )
         except Exception as exc:
             messagebox.showerror(
-                "Update prompt error",
+                t("err_update_prompt"),
                 str(exc),
                 parent=self.root,
             )
             return
 
         self.set_species_prompt_text(text)
-        self.set_status("Species prompt updated")
+        self.set_status(t("status_species_prompt_updated"))
 
     def build_species_profile_prompt(
         self,
@@ -2343,8 +2722,8 @@ class MainWindow:
             os.startfile(str(COL_DIR))
         except Exception as exc:
             messagebox.showerror(
-                "Configurare inițială",
-                f"Nu pot deschide ghidul:\n{readme}\n\n{exc}",
+                t("err_initial_config"),
+                t("err_cannot_open_readme").format(readme, exc),
                 parent=self.root,
             )
 
@@ -2499,17 +2878,21 @@ class MainWindow:
             self.select_image(0)
 
         self.set_status(
-            f"Added {added} image(s)"
+            t("status_added_images").format(added)
         )
 
 
     def refresh_image_list(self):
+        """Paints the status prefix of each row.
 
-        self.image_listbox.delete(
-            0,
-            tk.END
-        )
+        The rows are updated in place. Deleting and re-inserting them — the
+        obvious implementation — threw away the selection, the highlight and
+        the keyboard focus on every call, and ANALYZE ALL calls this after
+        each image. The effect was that the arrow keys stopped working and
+        any selection vanished several times per minute.
+        """
 
+        labels = []
         for path in self.image_paths:
 
             status = self.image_status.get(
@@ -2532,10 +2915,57 @@ class MainWindow:
             else:
                 prefix = "   "
 
-            self.image_listbox.insert(
-                tk.END,
-                prefix + path.name
-            )
+            labels.append(prefix + path.name)
+
+        box = self.image_listbox
+
+        if box.size() == len(labels):
+            # Same rows, maybe a different prefix. A Listbox has no item()
+            # setter, so a row is replaced by delete + insert at the same
+            # index — and deleting the *active* row drops the selection and
+            # moves the anchor. During a batch that row is usually the one
+            # being processed, i.e. the one under the user's highlight, so the
+            # state is saved and put back.
+            selection = [int(i) for i in box.curselection()]
+            try:
+                active = int(box.index("active"))
+            except (tk.TclError, ValueError):
+                active = -1
+
+            for index, text in enumerate(labels):
+                if _listbox_text(box, index) != text:
+                    box.delete(index)
+                    box.insert(index, text)
+
+            for index in selection:
+                if 0 <= index < len(labels):
+                    box.selection_set(index)
+            if 0 <= active < len(labels):
+                box.activate(active)
+            return
+
+        # The list itself changed (added, removed, cleared). Keep the user
+        # where they were instead of snapping back to the first row.
+        selection = [
+            int(i) for i in box.curselection()
+        ]
+        try:
+            active = int(box.index("active"))
+        except (tk.TclError, ValueError):
+            active = -1
+        had_focus = self.root.focus_get() is box
+
+        box.delete(0, tk.END)
+        for text in labels:
+            box.insert(tk.END, text)
+
+        for index in selection:
+            if 0 <= index < len(labels):
+                box.selection_set(index)
+        if 0 <= active < len(labels):
+            box.activate(active)
+        if had_focus:
+            box.focus_set()
 
 
     def select_image(self, index: int):
@@ -2546,36 +2976,147 @@ class MainWindow:
         if index < 0 or index >= len(self.image_paths):
             return
 
-        self.image_listbox.selection_clear(
-            0,
-            tk.END
-        )
+        # Same path as a click: it also re-anchors the listbox, so a later
+        # click cannot be dragged to a stale row.
+        self._show_index(index, select=True)
 
-        self.image_listbox.selection_set(
-            index
-        )
 
-        self.image_listbox.see(
-            index
-        )
+    def _on_image_navigate(self, _event=None) -> None:
+        """Shows the photo when moving through the image list with the keys.
 
-        self.load_selected_image(
-            self.image_paths[index]
-        )
+        The selection is read on an idle callback: at key-press time the
+        listbox has not moved its selection yet, so loading here would always
+        show the previous photo.
+        """
+        if getattr(self, "image_listbox", None) is None:
+            return
+        # A key press means the mouse is no longer driving the list, so any
+        # remembered click must not outlive this event.
+        self._clicked_index = -1
+        self.root.after_idle(self.load_image_from_selection)
 
+    def _selected_index(self) -> int:
+        """The row the user acted on, or -1 when nothing is selected.
+
+        curselection()[0] is the *first* selected row, which is the wrong
+        answer as soon as several rows are selected: after Ctrl+clicking row
+        9 with row 3 already selected, the photo must follow row 9, not row 3.
+        A click records its own row, and the keyboard keeps using the
+        highlight.
+        """
+        clicked = getattr(self, "_clicked_index", -1)
+        if 0 <= clicked < len(self.image_paths):
+            return clicked
+        selection = self.image_listbox.curselection()
+        return int(selection[0]) if selection else -1
+
+    def selected_indices(self) -> list[int]:
+        """Every selected row, in list order."""
+        return sorted(int(i) for i in self.image_listbox.curselection())
+
+    def _batch_indices(self) -> list[int]:
+        """Rows a batch command works on: the selection, or everything.
+
+        Three cases, and the middle one is why a single selected row does not
+        count as a filter:
+
+        * no selection, or a full one — every image, as before the feature;
+        * a lone selected row — that is just the *current* image.
+          add_folder() and add_images() end with select_image(0), so a freshly
+          loaded list always has exactly one row selected. Treating that as a
+          filter made GEN PROFILE ALL process a single photo.
+        * several rows — a deliberate Ctrl/Shift selection, so honour it.
+        """
+        chosen = self.selected_indices()
+        if 1 < len(chosen) < len(self.image_paths):
+            return chosen
+        return list(range(len(self.image_paths)))
+
+    def _note_selection_scope(self) -> int:
+        """Tells the user how many images a batch command will touch.
+
+        Without this, a leftover selection silently changes what ANALYZE ALL
+        does — the exact surprise a multi-select list is prone to.
+        """
+        total = len(self.image_paths)
+        chosen = len(self._batch_indices())
+        if chosen < total:
+            self.set_status(
+                t("status_selection_scope").format(chosen=chosen, total=total)
+            )
+        return chosen
+
+    def _highlighted_index(self) -> int:
+        """The item under the keyboard highlight, or -1 when there is none.
+
+        index("active") is what the arrow keys move, so the keyboard path
+        follows it. It is deliberately NOT used for mouse clicks: the anchor
+        keeps its old value when the list is only refilled, and honouring it
+        then scrolled the list to another row and loaded the wrong photo.
+        """
+        try:
+            return int(self.image_listbox.index("active"))
+        except (tk.TclError, ValueError):
+            return self._selected_index()
+
+    def _show_index(self, index: int, select: bool) -> None:
+        """Selects (when asked) and loads the image at *index*.
+
+        Both entry points go through here, so the mouse and the keyboard end
+        up in the same state: a properly highlighted item and the photo on
+        screen. Loading is skipped when the photo is already current, which
+        also stops the keyboard path from loading twice (selecting the item
+        re-enters through <<ListboxSelect>>).
+        """
+        if index < 0 or index >= len(self.image_paths):
+            return
+        path = self.image_paths[index]
+        if select:
+            self.image_listbox.selection_clear(0, tk.END)
+            self.image_listbox.selection_set(index)
+        # Keep the anchor on the item we just showed. Without this the anchor
+        # could stay on an old row and hijack the next mouse click.
+        try:
+            self.image_listbox.activate(index)
+        except tk.TclError:
+            pass
+        try:
+            self.image_listbox.see(index)
+        except tk.TclError:
+            pass
+        if path == self.image_path:
+            return
+        self.load_selected_image(path)
+
+    def load_image_from_selection(self) -> None:
+        """Keyboard path: highlight the item and show its photo."""
+        self._show_index(self._highlighted_index(), select=True)
+
+    def on_image_list_clicked(self, event=None):
+        """Remembers the row under the pointer.
+
+        With a multi-selection there is no longer a single "selected" row:
+        Ctrl+click adds a row, Shift+click extends a range, and in both cases
+        the photo must follow the row that was clicked, not the first selected
+        one.
+        """
+        if event is None:
+            self._clicked_index = -1
+            return
+        try:
+            self._clicked_index = int(self.image_listbox.nearest(event.y))
+        except tk.TclError:
+            self._clicked_index = -1
 
     def on_image_selected(self, event=None):
 
-        selection = self.image_listbox.curselection()
-
-        if not selection:
-            return
-
-        index = selection[0]
-
-        self.load_selected_image(
-            self.image_paths[index]
-        )
+        # Mouse path: the click already chose the row, so the recorded index
+        # is the truth — but only for this event. Widget bindings run before
+        # Tk's class bindings, so a click that is left in place would pin
+        # the list to that row and swallow every later arrow key.
+        index = self._selected_index()
+        self._clicked_index = -1
+        self._show_index(index, select=False)
 
 
     def load_selected_image(self, path: Path):
@@ -2709,7 +3250,7 @@ class MainWindow:
             )
 
             self.set_status(
-                f"Selected: {path.name}"
+                t("status_selected").format(path.name)
             )
             
             self.load_saved_result(path)
@@ -2740,7 +3281,7 @@ class MainWindow:
             self.image_base64 = None
 
             messagebox.showerror(
-                "Image error",
+                t("err_image"),
                 str(exc)
             )
 
@@ -2813,7 +3354,7 @@ class MainWindow:
         except OSError:
             pass
 
-        self.set_status(f"Profile model: {model}")
+        self.set_status(t("status_profile_model").format(model))
 
     def refresh_profile_models(self):
         """
@@ -2970,6 +3511,93 @@ class MainWindow:
 
         return "\n".join(lines).strip()
 
+    def generate_profile_response(self, full_prompt: str) -> str:
+        """Runs the profile model, retrying once when the answer is cut off.
+
+        A truncated answer is not a partial success: the JSON contract closes
+        at the very end of the response, so nothing can be saved. Rather than
+        failing the species and forcing a manual re-run of the whole batch,
+        the profile is generated once more with the reserve budget.
+
+        num_predict is a ceiling, not a reservation — the retry costs time
+        only for the species that actually need it.
+        """
+        budget = self.profile_num_predict
+        last_error = None
+
+        for attempt in (1, 2):
+            data = generate(
+                ollama_url=self.ollama_url,
+                model=self.profile_model or self.model,
+                prompt=full_prompt,
+                image_base64=None,
+                num_ctx=self.profile_num_ctx,
+                num_predict=budget,
+                thinking=self.profile_thinking,
+            )
+
+            if data.get("done_reason") != "length":
+                response = get_response(data)
+                if not response.strip():
+                    raise OllamaError("Modelul nu a returnat nimic.")
+                return response
+
+            last_error = (
+                f"Răspunsul a fost trunchiat de limita de tokenuri "
+                f"(PROFILE_NUM_PREDICT={budget})."
+            )
+            reserve = self.profile_num_predict_retry
+            if attempt == 1 and reserve > budget:
+                budget = reserve
+                self.profile_retried += 1
+                continue
+            break
+
+        raise OllamaError(
+            f"{last_error} Specia are nevoie de mai mult de "
+            f"{budget} tokeni; mărește PROFILE_NUM_PREDICT_RETRY în "
+            f"config/settings.txt sau PROFILE_NUM_CTX."
+        )
+
+    def cancel_batch(self, event=None):
+        """Asks the running batch to stop after the current item.
+
+        The flag is only read at the top of the loop, so an image already
+        handed to the model still finishes instead of being abandoned
+        half-written. Closing the window (X) still stops everything at once,
+        but that throws the whole session away.
+        """
+        if getattr(self, "_batch_running", False):
+            self._cancel_batch = True
+            self.cancel_batch_button.configure(
+                text=t("btn_stopping"), state="disabled"
+            )
+            self.set_status(t("status_stopping"))
+
+    def batch_was_cancelled(self) -> bool:
+        return bool(getattr(self, "_cancel_batch", False))
+
+    def _begin_batch(self) -> None:
+        self._cancel_batch = False
+        self._batch_running = True
+        self.cancel_batch_button.configure(
+            text=t("btn_stop"), state="normal"
+        )
+        # winfo_manager, not winfo_ismapped: a packed widget inside an
+        # unmapped window still reports "not mapped", and the button would
+        # then never be hidden again.
+        if self.cancel_batch_button.winfo_manager() != "pack":
+            self.cancel_batch_button.pack(side="left", padx=(10, 0))
+
+    def _end_batch(self) -> bool:
+        """Clears the running state and reports whether it was stopped."""
+        self._batch_running = False
+        stopped = self.batch_was_cancelled()
+        self._cancel_batch = False
+        if self.cancel_batch_button.winfo_manager() == "pack":
+            self.cancel_batch_button.pack_forget()
+        return stopped
+
     def generate_species_profile(self):
 
         if self.image_path is None:
@@ -2982,8 +3610,8 @@ class MainWindow:
 
         if not item:
             messagebox.showinfo(
-                "Species profile",
-                "Analițează imaginea înainte de a genera profilul speciei.",
+                t("title_species_profile"),
+                t("info_analyze_before_gen_profile"),
                 parent=self.root,
             )
             return
@@ -2992,20 +3620,15 @@ class MainWindow:
 
         if not scientific_name or scientific_name in ("Necunoscut", "Unknown"):
             messagebox.showinfo(
-                "Species profile",
-                "Specia nu este încă identificată.",
+                t("title_species_profile"),
+                t("info_species_unknown"),
                 parent=self.root,
             )
             return
 
         confirmed = messagebox.askyesno(
-            "Generate species profile",
-            f"Vei genera profilul speciei:\n\n"
-            f"{scientific_name}\n\n"
-            "Profilul se bazează pe cunoștințele modelului despre specia în general, "
-            "nu pe fotografia curentă.\n\n"
-            f"Model (text-only): {self.profile_model or self.model}\n\n"
-            "Continui?",
+            t("title_gen_profile"),
+            t("confirm_gen_profile").format(scientific_name, self.profile_model or self.model),
             parent=self.root,
         )
 
@@ -3030,7 +3653,7 @@ class MainWindow:
 
         self.profile_start_time = time.perf_counter()
         self.set_status(
-            f"Generating species profile: {scientific_name}..."
+            t("status_generating_profile").format(scientific_name)
         )
         self.update_status_with_time()
 
@@ -3062,32 +3685,7 @@ class MainWindow:
                     en_name,
                 )
 
-                data = generate(
-                    ollama_url=self.ollama_url,
-                    model=self.profile_model or self.model,
-                    prompt=full_prompt,
-                    image_base64=None,
-                    num_ctx=self.num_ctx,
-                    num_predict=self.profile_num_predict,
-                    thinking=self.profile_thinking,
-                )
-
-                # Răspuns trunchiat de limita de tokenuri => JSON-ul
-                # structurat ar ieși incomplet. Raportăm clar cauza.
-                if data.get("done_reason") == "length":
-                    raise OllamaError(
-                        "Răspunsul a fost trunchiat de limita de tokenuri "
-                        f"(PROFILE_NUM_PREDICT={self.profile_num_predict}). "
-                        "Mărește PROFILE_NUM_PREDICT în config/settings.txt "
-                        "și încearcă din nou."
-                    )
-
-                response = get_response(data)
-
-                if not response.strip():
-                    raise OllamaError(
-                        "Modelul nu a returnat nimic."
-                    )
+                response = self.generate_profile_response(full_prompt)
 
                 fields = extract_structured_data(response)
 
@@ -3193,21 +3791,18 @@ class MainWindow:
             elapsed_str = self.format_seconds(elapsed)
 
             self.set_status(
-                f"Species profile generated: {scientific_name}"
-                f" — {elapsed_str}"
+                t("status_profile_generated_time").format(scientific_name, elapsed_str)
             )
 
             # Pop-up de finalizare, ca la ANALYZE
             messagebox.showinfo(
-                "Profil finalizat",
-                f"Profilul a fost generat pentru:\n\n"
-                f"{scientific_name}\n\n"
-                f"Durată: {elapsed_str}",
+                t("info_profile_done_title"),
+                t("info_profile_generated").format(scientific_name, elapsed_str),
                 parent=self.root,
             )
         else:
             self.set_status(
-                f"Species profile generated: {scientific_name}"
+                t("status_profile_generated_short").format(scientific_name)
             )
 
     def profile_generation_failed(self, exc: Exception):
@@ -3224,13 +3819,13 @@ class MainWindow:
         self.update_catalog_buttons()
 
         messagebox.showerror(
-            "Species profile error",
+            t("err_species_profile"),
             str(exc),
             parent=self.root,
         )
 
         self.set_status(
-            "Species profile generation failed"
+            t("status_profile_failed")
         )
 
     def load_saved_profile(self):
@@ -3254,9 +3849,8 @@ class MainWindow:
         # Determinăm motivul pentru care nu putem încărca profilul
         if not item:
             messagebox.showinfo(
-                "Species profile",
-                "Imaginea nu este în catalog.\n\n"
-                "Rulează ANALYZE mai întâi pentru a o identifica.",
+                t("title_species_profile"),
+                t("info_not_in_catalog"),
                 parent=self.root,
             )
             return
@@ -3265,9 +3859,8 @@ class MainWindow:
 
         if not scientific_name or scientific_name in ("Necunoscut", "Unknown"):
             messagebox.showinfo(
-                "Species profile",
-                "Specia nu este încă identificată.\n\n"
-                "Rulează ANALYZE pentru a o identifica.",
+                t("title_species_profile"),
+                t("info_species_unknown_run"),
                 parent=self.root,
             )
             return
@@ -3279,9 +3872,8 @@ class MainWindow:
 
         if not profile or not (profile.get("profile_response") or "").strip():
             messagebox.showinfo(
-                "Species profile",
-                f"Nu există profil salvat pentru:\n\n{scientific_name}\n\n"
-                "Apasă GEN PROFILE pentru a genera unul.",
+                t("title_species_profile"),
+                t("info_no_profile_saved").format(scientific_name),
                 parent=self.root,
             )
             return
@@ -3289,8 +3881,72 @@ class MainWindow:
         self._load_profile_into_pane(scientific_name, profile)
 
         self.set_status(
-            f"Species profile loaded: {scientific_name}"
+            t("status_profile_loaded").format(scientific_name)
         )
+
+    def ask_profile_scope(self, saved: int, missing: int) -> str | None:
+        """Asks whether to regenerate everything or only the gaps.
+
+        Returns "all", "missing", or None (cancelled). A Yes/No pair cannot
+        express this: "No" used to abort the whole batch, so a user with 9
+        good profiles and 11 missing ones had no way to fill just the gaps
+        without risking a pointless overwrite of the 9.
+        """
+        dialog = tk.Toplevel(self.root)
+        dialog.title(t("profile_scope_title"))
+        dialog.transient(self.root)
+        dialog.resizable(False, False)
+
+        ttk.Label(
+            dialog,
+            text=t("profile_scope_intro").format(
+                saved=saved, total=saved + missing
+            ),
+            justify="left",
+            wraplength=420,
+        ).pack(padx=16, pady=(14, 8))
+
+        buttons = ttk.Frame(dialog)
+        buttons.pack(padx=16, pady=(0, 10), fill="x")
+
+        # Cancel first, so it keeps focus and Enter stays the safe answer.
+        ttk.Button(
+            buttons, text=t("btn_cancel"),
+            command=dialog.destroy,
+        ).pack(side="right", padx=(6, 0))
+
+        def choose(value):
+            dialog.result = value
+            dialog.destroy()
+
+        ttk.Button(
+            buttons,
+            text=t("btn_profiles_all").format(n=saved + missing),
+            command=lambda: choose("all"),
+        ).pack(side="right", padx=(6, 0))
+        ttk.Button(
+            buttons,
+            text=t("btn_profiles_missing").format(n=missing),
+            command=lambda: choose("missing"),
+        ).pack(side="right")
+
+        ttk.Label(
+            dialog,
+            text=t("profile_scope_note"),
+            justify="left",
+            wraplength=420,
+        ).pack(padx=16, pady=(0, 12))
+
+        dialog.bind("<Escape>", lambda event: dialog.destroy())
+        dialog.bind(
+            "<Return>", lambda event: dialog.destroy()
+        )   # default action: cancel, nothing is overwritten
+
+        dialog.result = None
+        dialog.update_idletasks()
+        dialog.grab_set()
+        dialog.wait_window()
+        return getattr(dialog, "result", None)
 
     def start_batch_profile_generation(self):
         """
@@ -3301,8 +3957,8 @@ class MainWindow:
 
         if not self.image_paths:
             messagebox.showwarning(
-                "No images",
-                "Add at least one image first.",
+                t("warn_no_images_title"),
+                t("warn_add_image_first"),
                 parent=self.root,
             )
             return
@@ -3317,36 +3973,36 @@ class MainWindow:
             if not info["has_profile"]
         ]
 
-        # Un singur dialog pentru confirmare — mesaj adaptat automat
         if existing_with_profile:
-            action_desc = (
-                f"{len(existing_with_profile)} specie(i) au deja un profil salvat "
-                "în baza de date. "
-                "Dorești să regenerezi TOATE (inclusiv cele salvate)?\n"
-                f"Se vor procesa toate cele {len(species_map)} specie(i) încărcate."
+            # Trei răspunsuri, nu două: refacă tot, umple doar golurile,
+            # sau renunță. „Nu" înseamnă altfel anulează tot lotul, deci
+            # utilizatorul nu putea genera doar speciile lipsă.
+            choice = self.ask_profile_scope(
+                len(existing_with_profile), len(pending)
             )
+            if choice == "all":
+                pending = list(species_map.values())
+            elif choice != "missing":
+                return
+            if not pending:
+                return
         else:
-            action_desc = (
-                f"Vei genera profilul pentru {len(pending)} specii "
-                f"(din {len(species_map)} identificate)."
+            # A partial selection silently shrinks the lot, so say so.
+            chosen = self._note_selection_scope()
+            body = t("confirm_gen_profiles_all").format(
+                len(pending), len(species_map)
             )
-
-        confirmed = messagebox.askyesno(
-            "Generate all species profiles",
-            f"{action_desc}\n\n"
-            "Poți alege modelul și din dropdown-ul MODEL.\n"
-            "Procesul poate dura câteva minute pentru un model local.\n\n"
-            "Continui?",
-            parent=self.root,
-        )
-
-        if not confirmed:
-            return
-
-        # Dacă am profiluri salvate și utilizatorul a acceptat,
-        # vom regenra toate — nu doar pe cele fără profil
-        if existing_with_profile:
-            pending = list(species_map.values())
+            if chosen < len(self.image_paths):
+                body += "\n\n" + t("confirm_selection_used").format(
+                    chosen=chosen, total=len(self.image_paths)
+                )
+            confirmed = messagebox.askyesno(
+                t("title_gen_profiles_all"),
+                body,
+                parent=self.root,
+            )
+            if not confirmed:
+                return
 
         self.analyze_button.configure(state="disabled")
         self.analyze_all_button.configure(state="disabled")
@@ -3362,8 +4018,9 @@ class MainWindow:
         self.batch_total = len(pending)
         self.batch_current = 0
         self.batch_filename = None
+        self._begin_batch()
         self.set_status(
-            f"Generating species profiles: 0 / {len(pending)}..."
+            t("status_generating_profiles").format(len(pending))
         )
         self.update_status_with_time()
 
@@ -3389,8 +4046,16 @@ class MainWindow:
         total = len(pending)
         completed = 0
         errors = []
+        stopped = False
+        self.profile_retried = 0
 
         for index, info in enumerate(pending):
+
+            # Same contract as ANALYZE ALL: finish what is in flight, never
+            # start the next one after a stop.
+            if self.batch_was_cancelled():
+                stopped = True
+                break
 
             scientific_name = info["scientific_name"]
 
@@ -3415,28 +4080,7 @@ class MainWindow:
                     info["en_name"],
                 )
 
-                data = generate(
-                    ollama_url=self.ollama_url,
-                    model=self.profile_model or self.model,
-                    prompt=full_prompt,
-                    image_base64=None,
-                    num_ctx=self.num_ctx,
-                    num_predict=self.profile_num_predict,
-                    thinking=self.profile_thinking,
-                )
-
-                if data.get("done_reason") == "length":
-                    raise OllamaError(
-                        "Răspunsul a fost trunchiat de limita de tokenuri "
-                        f"(PROFILE_NUM_PREDICT={self.profile_num_predict})."
-                    )
-
-                response = get_response(data)
-
-                if not response.strip():
-                    raise OllamaError(
-                        "Modelul nu a returnat nimic."
-                    )
+                response = self.generate_profile_response(full_prompt)
 
                 fields = extract_structured_data(response)
 
@@ -3475,6 +4119,8 @@ class MainWindow:
 
         batch_elapsed = time.perf_counter() - self.profile_start_time
 
+        self._end_batch()
+
         self.root.after(
             0,
             self.batch_profile_finished,
@@ -3482,6 +4128,7 @@ class MainWindow:
             completed,
             errors,
             batch_elapsed,
+            stopped,
         )
 
     def _batch_profile_status(
@@ -3502,8 +4149,7 @@ class MainWindow:
         self.progress.start(200)
 
         self.set_status(
-            f"Generating species profile {current + 1} / {total}: "
-            f"{scientific_name}..."
+            t("status_generating_profile_n").format(current + 1, total, scientific_name)
         )
 
     def batch_profile_finished(
@@ -3512,6 +4158,7 @@ class MainWindow:
         completed: int,
         errors: list[str],
         elapsed: float,
+        stopped: bool = False,
     ):
         """
         Callback final pentru GEN PROFILE ALL: restaurează controalele,
@@ -3527,39 +4174,70 @@ class MainWindow:
         self.analyze_button.configure(state="normal")
         self.analyze_all_button.configure(state="normal")
         self.update_catalog_buttons()
+        self.batch_progress_frame.pack_forget()
 
         duration = self.format_seconds(elapsed)
+
+        if stopped:
+            # A stopped batch is not a failed one: say so plainly and keep
+            # whatever finished, instead of reporting "0 errors" as if the
+            # work had completed.
+            self.set_status(
+                t("status_stopped").format(
+                    done=completed, total=total, duration=duration
+                )
+            )
+            messagebox.showinfo(
+                t("profiles_done_title"),
+                t("batch_stopped").format(done=completed, total=total),
+                parent=self.root,
+            )
+            return
+
+        # Speciile salvate doar datorită rezervei arată că plafonul de bază
+        # e prea mic pentru tipul de specie procesat.
+        reserve_note = ""
+        if getattr(self, "profile_retried", 0):
+            reserve_note = "\n\n" + t("profiles_reserve").format(
+                n=self.profile_retried,
+                tokens=self.profile_num_predict_retry,
+            )
+        self.profile_retried = 0
+
+        summary_head = (
+            t("summary_completed").format(done=completed, total=total)
+            + "\n\n"
+            + t("summary_errors").format(n=len(errors))
+            + "\n\n"
+            + t("summary_duration").format(duration=duration)
+            + "\n\n"
+        )
 
         if errors:
 
             self.set_status(
-                f"Species profiles: {completed}/{total} completed, "
-                f"errors: {len(errors)} — {duration}"
+                t("status_profiles_errors").format(completed, total, len(errors), duration)
             )
 
             error_text = "\n".join(errors)
 
             messagebox.showwarning(
-                "Species profiles finished with errors",
-                f"Completed: {completed}/{total}\n\n"
-                f"Errors: {len(errors)}\n\n"
-                f"Total duration: {duration}\n\n"
-                f"{error_text}",
+                t("profiles_errors_title"),
+                summary_head + error_text + reserve_note,
                 parent=self.root,
             )
 
         else:
 
             self.set_status(
-                f"Species profiles completed: {completed}/{total} — "
-                f"{duration}"
+                t("status_profiles_completed").format(completed, total, duration)
             )
 
             messagebox.showinfo(
-                "Species profiles complete",
-                f"All {total} species profiles were generated "
-                f"successfully.\n\n"
-                f"Total duration: {duration}",
+                t("profiles_done_title"),
+                t("profiles_done").format(
+                    total=total, duration=duration
+                ) + reserve_note,
                 parent=self.root,
             )
 
@@ -3572,7 +4250,7 @@ class MainWindow:
 
         species_map: dict[str, dict] = {}
 
-        for path in self.image_paths:
+        for path in (self.image_paths[i] for i in self._batch_indices()):
 
             item = get_catalog_item(path, OUTPUT_DIR)
 
@@ -3614,28 +4292,31 @@ class MainWindow:
 
     def remove_selected_image(self):
 
-        selection = self.image_listbox.curselection()
+        # Every selected row goes, not just the first: removing one photo at
+        # a time from a multi-selection would be a trap.
+        indices = self.selected_indices()
 
-        if not selection:
+        if not indices:
             return
 
-        index = selection[0]
-        
-        path = self.image_paths[index]
-
-        self.image_locations.pop(
-            path,
-            None
-        )
-
-        del self.image_paths[index]        
+        current = self.image_path
+        for index in reversed(indices):
+            path = self.image_paths[index]
+            if path == current:
+                current = None
+            self.image_locations.pop(
+                path,
+                None
+            )
+            del self.image_paths[index]
 
         self.refresh_image_list()
 
         if self.image_paths:
 
+            # Land on whatever took the place of the first removed row.
             new_index = min(
-                index,
+                indices[0],
                 len(self.image_paths) - 1
             )
 
@@ -3661,7 +4342,7 @@ class MainWindow:
             )
 
             self.set_status(
-                "No images"
+                t("warn_no_images_title")
             )
 
 
@@ -3685,7 +4366,7 @@ class MainWindow:
         )
 
         self.set_status(
-            "Images cleared"
+            t("status_images_cleared")
         )
 
         self.set_output_text(
@@ -3761,7 +4442,7 @@ class MainWindow:
         )
 
         self.set_status(
-            f"Error {current} / {total}: {filename}"
+            t("status_step_error").format(current, total, filename)
         )
 
 
@@ -3798,7 +4479,7 @@ class MainWindow:
         )
 
         self.set_status(
-            f"Completed {current} / {total}: {filename}"
+            t("status_step_completed").format(current, total, filename)
         )
 
 
@@ -3807,7 +4488,9 @@ class MainWindow:
         total,
         completed,
         errors,
-        elapsed
+        elapsed,
+        image_names=None,
+        stopped: bool = False,
     ):
 
         self.stop_status_timer()
@@ -3869,12 +4552,38 @@ class MainWindow:
             elapsed
         )
 
+        summary_head = (
+            t("summary_completed").format(done=completed, total=total)
+            + "\n\n"
+            + t("summary_errors").format(n=len(errors))
+            + "\n\n"
+            + t("summary_duration").format(duration=duration)
+            + "\n\n"
+        )
+
+        if stopped:
+            # A stopped batch is neither a success nor a failure. Reporting
+            # "Errors: 0" would claim the work finished, and the bar reading
+            # "50 / 50" would claim all of it was done.
+            self.batch_progress_label.configure(
+                text=t("batch_progress").format(cur=completed, total=total)
+            )
+            self.set_status(
+                t("status_stopped").format(
+                    done=completed, total=total, duration=duration
+                )
+            )
+            messagebox.showinfo(
+                t("batch_done_title"),
+                t("batch_stopped").format(done=completed, total=total),
+                parent=self.root,
+            )
+            return
+
         if errors:
 
             self.set_status(
-                f"Batch finished: {completed}/{total}, "
-                f"errors: {len(errors)} — "
-                f"{duration}"
+                t("status_batch_finished").format(completed, total, len(errors), duration)
             )
 
             error_text = "\n".join(
@@ -3882,25 +4591,33 @@ class MainWindow:
             )
 
             messagebox.showwarning(
-                "Batch finished with errors",
-                f"Completed: {completed}/{total}\n\n"
-                f"Errors: {len(errors)}\n\n"
-                f"Total duration: {duration}\n\n"
-                f"{error_text}"
+                t("batch_errors_title"),
+                summary_head + error_text,
+                parent=self.root,
             )
 
         else:
 
             self.set_status(
-                f"Batch completed: {completed}/{total} — "
-                f"{duration}"
+                t("status_batch_completed").format(completed, total, duration)
             )
 
             messagebox.showinfo(
-                "Batch complete",
-                f"All {total} images were analyzed successfully.\n\n"
-                f"Total duration: {duration}"
+                t("batch_done_title"),
+                t("batch_done").format(total=total, duration=duration),
             )
+
+        # ----------------------------------------------------
+        # Species missing from the taxonomy database
+        # ----------------------------------------------------
+
+        # ANALYZE ALL runs unattended, so the per-image CoL dialog never
+        # appears. Instead, collect the whole lot and show one list the user
+        # can walk through image by image. Validation opens the 900 MB
+        # taxonomy cache, so it runs in the background and only the dialog
+        # is scheduled back on the main thread.
+        if image_names:
+            self._report_batch_unverified_species(image_names)
 
 
     def load_image(self, path: Path):
@@ -3957,7 +4674,7 @@ class MainWindow:
             )
 
             self.set_status(
-                f"Loaded: {path.name}"
+                t("status_loaded").format(path.name)
             )
 
         except Exception as exc:
@@ -3966,7 +4683,7 @@ class MainWindow:
             self.image_base64 = None
 
             messagebox.showerror(
-                "Image error",
+                t("err_image"),
                 str(exc)
             )
 
@@ -4268,8 +4985,8 @@ class MainWindow:
 
         if self.image_path is None:
             messagebox.showwarning(
-                "No image",
-                "Select an image first."
+                t("warn_no_image_title"),
+                t("info_select_image")
             )
             return
 
@@ -4277,8 +4994,8 @@ class MainWindow:
 
         if not prompt:
             messagebox.showwarning(
-                "No prompt",
-                "Enter a prompt first."
+                t("warn_no_prompt_title"),
+                t("info_enter_prompt")
             )
             return
 
@@ -4324,7 +5041,7 @@ class MainWindow:
         self.analysis_start_time = time.perf_counter()
         self.profile_start_time = None
         self.set_status(
-            "Muse Glimmer is working..."
+            t("status_working")
         )
         self.update_status_with_time()
 
@@ -4352,8 +5069,8 @@ class MainWindow:
 
         if not self.image_paths:
             messagebox.showwarning(
-                "No images",
-                "Add at least one image first."
+                t("warn_no_images_title"),
+                t("warn_add_image_first")
             )
             return
 
@@ -4361,8 +5078,8 @@ class MainWindow:
 
         if not prompt:
             messagebox.showwarning(
-                "No prompt",
-                "Enter a prompt first."
+                t("warn_no_prompt_title"),
+                t("info_enter_prompt")
             )
             return
 
@@ -4399,10 +5116,14 @@ class MainWindow:
         )
 
         # ----------------------------------------------------
+        # Only the chosen subset takes part when the user made a selection.
+        indices = self._batch_indices()
+        paths = [self.image_paths[i] for i in indices]
+
         # Progress
         # ----------------------------------------------------
 
-        total = len(self.image_paths)
+        total = len(paths)
 
         # Current image progress
         self.progress.pack(
@@ -4436,18 +5157,15 @@ class MainWindow:
         self.batch_total = total
         self.batch_current = 0
         self.analysis_start_time = time.perf_counter()
+        self._begin_batch()
         self.set_status(
-            f"Processing batch: 0 / {total}"
+            t("status_processing_batch").format(total)
         )
         self.update_status_with_time()
 
         # ----------------------------------------------------
         # Snapshot of the list and preset
         # ----------------------------------------------------
-
-        paths = list(
-            self.image_paths
-        )
 
         preset_name = self.prompt_var.get()
 
@@ -4473,12 +5191,19 @@ class MainWindow:
 
         batch_start_time = time.perf_counter()
         
-        total = len(paths)        
+        total = len(paths)
 
         completed = 0
         errors = []
+        stopped = False
 
         for index, path in enumerate(paths, start=0):
+
+            # Read at the top of the loop: the image in flight always
+            # finishes, the next one is never started.
+            if self.batch_was_cancelled():
+                stopped = True
+                break
 
             self.image_status[path] = "processing"
 
@@ -4726,13 +5451,17 @@ class MainWindow:
 
         batch_elapsed = time.perf_counter() - batch_start_time
 
+        self._end_batch()
+
         self.root.after(
             0,
             self.batch_finished,
             total,
             completed,
             errors,
-            batch_elapsed
+            batch_elapsed,
+            list(paths),
+            stopped,
         )
 
     def run_analysis(self, prompt: str, preset_name: str):
@@ -5007,7 +5736,7 @@ class MainWindow:
 
         except Exception as exc:
             self.set_status(
-                f"Result displayed, but could not be saved: {exc}"
+                t("status_result_not_saved").format(exc)
             )
 
         # ----------------------------------------------------
@@ -5015,7 +5744,7 @@ class MainWindow:
         # ----------------------------------------------------
 
         self.set_status(
-            f"Done — {self.format_seconds(elapsed)}"
+            t("status_done").format(self.format_seconds(elapsed))
         )
 
         # ----------------------------------------------------
@@ -5054,11 +5783,21 @@ class MainWindow:
                     self._show_col_dialog(payload["result"], payload["name"])
                 except Exception:
                     pass  # never block the completion popup on the dialog
+            # Show the species actually stored in the catalog, not the file
+            # name: after UPDATE SPECIES the two differ, and the file name
+            # still carries the old binomial — which read as "the rename
+            # did not stick" and triggered a second, pointless rename.
+            species = ""
+            if self.image_path is not None:
+                try:
+                    item = get_catalog_item(self.image_path, OUTPUT_DIR) or {}
+                    species = (item.get("scientific_name") or "").strip()
+                except Exception:
+                    species = ""
+            label = species or (self.image_path.name if self.image_path else "—")
             messagebox.showinfo(
-                "Analiză finalizată",
-                f"Analiza a fost finalizată pentru:\n\n"
-                f"{self.image_path.name}\n\n"
-                f"Durată: {self.format_seconds(elapsed)}"
+                t("info_analysis_done_title"),
+                t("info_analysis_done_body").format(label, self.format_seconds(elapsed))
             )
 
         threading.Thread(target=worker, daemon=True).start()
@@ -5138,6 +5877,178 @@ class MainWindow:
                 lines.append(t("col_no_hint"))
 
         return "\n".join(lines), (accepted["name"] if accepted else None)
+
+    def _show_unverified_species_dialog(self, report: dict) -> None:
+        """Single list of the batch species missing from the database.
+
+        ANALYZE ALL is unattended, so this replaces the per-image CoL dialog
+        that would otherwise never appear. Each row keeps every image the
+        model named that species on.
+
+        The window is deliberately NON-modal: the user has to reach
+        "Update species" in the main window for every photo, so the list only
+        follows along, selecting the current image and stepping to the next
+        one with the "Next" button.
+        """
+        if not report:
+            return
+
+        # One list at a time; a second ANALYZE ALL replaces the old one.
+        previous = getattr(self, "_unverified_dialog", None)
+        if previous is not None and previous.winfo_exists():
+            previous.destroy()
+            self._unverified_dialog = None
+
+        dlg = tk.Toplevel(self.root)
+        dlg.title(t("col_batch_title"))
+        dlg.transient(self.root)
+        dlg.geometry("760x460")
+        self._unverified_dialog = dlg
+
+        pending: dict = {
+            name: list((entry.get("images") or []))
+            for name, entry in report.items()
+        }
+        # Flat, stable order of every image still to be checked, plus the
+        # reverse lookup used to highlight the species row in the list.
+        queue: list = []
+        owner: dict = {}
+        for name in sorted(pending, key=str.casefold):
+            for image_name in pending[name]:
+                queue.append(image_name)
+                owner[image_name] = name
+        queue_index = 0
+        current_image = ""
+
+        ttk.Label(
+            dlg,
+            text=t("col_batch_intro").format(n=len(report)),
+            justify="left",
+            wraplength=720,
+        ).pack(fill="x", padx=12, pady=(12, 8))
+
+        tree = ttk.Treeview(
+            dlg,
+            columns=("species", "count", "files"),
+            show="headings",
+            height=min(len(report), 12),
+        )
+        tree.heading("species", text=t("col_batch_species"))
+        tree.heading("count", text="#")
+        tree.heading("files", text=t("col_batch_images"))
+        tree.column("species", width=220, anchor="w")
+        tree.column("count", width=48, anchor="center", stretch=False)
+        tree.column("files", width=440, anchor="w")
+        tree.pack(fill="both", expand=True, padx=12, pady=(0, 8))
+
+        def refresh_tree() -> None:
+            tree.delete(*tree.get_children())
+            for name in sorted(pending, key=str.casefold):
+                files = pending[name]
+                tree.insert(
+                    "", tk.END, iid=name,
+                    values=(name, len(files), ", ".join(files)),
+                )
+
+        refresh_tree()
+
+        def select_image(image_name: str) -> bool:
+            for index, candidate in enumerate(self.image_paths):
+                if candidate.name == image_name:
+                    self.select_image(index)
+                    return True
+            return False
+
+        def step(delta: int) -> None:
+            """Select the next/previous image still to be checked."""
+            nonlocal queue_index
+            if not queue:
+                return
+            queue_index = max(0, min(len(queue) - 1, queue_index + delta))
+            show(queue[queue_index])
+
+        def show(image_name: str) -> None:
+            """Select *image_name* in the main list and highlight its row."""
+            nonlocal current_image
+            if not select_image(image_name):
+                return
+            current_image = image_name
+            row = owner.get(image_name)
+            if row and tree.exists(row):
+                tree.selection_set(row)
+                tree.see(row)
+
+        def mark_checked() -> None:
+            """Drop the current species: the user handled it by hand."""
+            nonlocal queue_index
+            selection = tree.selection()
+            if not selection:
+                return
+            name = selection[0]
+            if name not in pending:
+                return
+            pending.pop(name, None)
+            # Rebuild the walk order so "Next" never stops on a done species.
+            for key in [key for key, value in owner.items() if value == name]:
+                owner.pop(key, None)
+                if key in queue:
+                    queue.remove(key)
+            # Re-anchor on the image still on screen: removing items from
+            # ``queue`` would otherwise shift it and "Next" would skip one.
+            if current_image in queue:
+                queue_index = queue.index(current_image)
+            else:
+                queue_index = max(0, min(len(queue) - 1, queue_index))
+            refresh_tree()
+            if not pending:
+                dlg.destroy()
+
+        buttons = ttk.Frame(dlg)
+        buttons.pack(fill="x", padx=12, pady=(0, 12))
+
+        ttk.Button(
+            buttons, text=t("col_batch_next"),
+            command=lambda: step(1),
+        ).pack(side="left")
+        ttk.Button(
+            buttons, text=t("col_batch_done"), command=mark_checked
+        ).pack(side="left", padx=(6, 0))
+        ttk.Button(
+            buttons, text=t("col_batch_close"),
+            command=lambda: dlg.destroy(),
+        ).pack(side="right")
+
+        def on_row(_event=None) -> None:
+            """Double-click / Enter jumps to the first image of that species."""
+            selection = tree.selection()
+            if not selection:
+                return
+            for image_name in pending.get(selection[0]) or []:
+                if select_image(image_name):
+                    break
+
+        tree.bind("<Double-1>", on_row)
+        tree.bind("<Return>", on_row)
+
+        dlg.protocol("WM_DELETE_WINDOW", dlg.destroy)
+        step(0)
+
+    def _report_batch_unverified_species(self, image_names) -> None:
+        """Validate the whole batch in the background, then show the list."""
+        if not image_names:
+            return
+
+        def worker() -> None:
+            try:
+                report = collect_batch_unverified_species(image_names)
+            except Exception:
+                report = {}
+            try:
+                self.root.after(0, self._show_unverified_species_dialog, report)
+            except Exception:
+                pass  # window closed while validating
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _show_col_dialog(self, result: dict, name: str) -> None:
         """Notice for a non-verified name + optional pre-filled Update form."""
@@ -5225,11 +6136,11 @@ class MainWindow:
         )
 
         self.set_status(
-            "Error"
+            t("title_error")
         )
 
         messagebox.showerror(
-            "Analysis failed",
+            t("err_analysis_failed"),
             str(error)
         )
 
@@ -5242,11 +6153,11 @@ class MainWindow:
             return
         item = get_catalog_item(self.image_path, OUTPUT_DIR)
         if not item:
-            messagebox.showinfo("Catalog", "Imaginea nu este încă în catalog.")
+            messagebox.showinfo(t("title_catalog"), t("info_image_not_cataloged"))
             return
         folder = Path(item["catalog_path"]).parent
         if not folder.is_dir():
-            messagebox.showwarning("Catalog", "Folderul catalogului nu mai există.")
+            messagebox.showwarning(t("title_catalog"), t("warn_catalog_folder_gone"))
             return
         os.startfile(str(folder))
 
@@ -5753,6 +6664,8 @@ class MainWindow:
         self.admin_frame.configure(text=t("admin_title"))
         self.help_button.configure(text=t("help_button"))
         self.refresh_help_language()
+        # Textele pot avea lățimi diferite în engleză -> recalculează rândurile.
+        self.button_bar.relayout(force=True)
         self.set_status(
             "Limba interfeței: RO. (Se aplică complet la restart.)"
             if new_lang == "ro"
@@ -5775,10 +6688,10 @@ class MainWindow:
         from core.taxonomy import build_cache, find_col_zip
         zip_path = find_col_zip()
         if not zip_path:
-            messagebox.showerror("Administrare", "Nicio arhiva .zip in col/.", parent=self.root)
+            messagebox.showerror(t("title_admin"), t("err_no_zip"), parent=self.root)
             return
-        if not messagebox.askyesno("Administrare",
-            f"Se reconstruiește taxonomy.db din:\n\n{zip_path.name}\n\nOperația poate dura câteva minute. Continui?",
+        if not messagebox.askyesno(t("title_admin"),
+            t("confirm_rebuild_taxonomy").format(zip_path.name),
             parent=self.root):
             return
         self.admin_set_status("Reconstruiesc taxonomy.db...")
@@ -5788,10 +6701,10 @@ class MainWindow:
                 def _done():
                     text = f"Gata: {stats['accepted']:,} taxoni încărcați în taxonomy.db."
                     self.admin_set_status(text)
-                    messagebox.showinfo("Administrare", text, parent=self.root)
+                    messagebox.showinfo(t("title_admin"), text, parent=self.root)
                 self.root.after(0, _done)
             except Exception as exc:
-                self.root.after(0, lambda: messagebox.showerror("Administrare", str(exc), parent=self.root))
+                self.root.after(0, lambda: messagebox.showerror(t("title_admin"), str(exc), parent=self.root))
         threading.Thread(target=worker, daemon=True).start()
 
     # ------------------------------------------------------------------
@@ -5810,11 +6723,10 @@ class MainWindow:
         """Buton: 🌐 Import denumiri din CoL (eng + ron din VernacularName.tsv)."""
         from core.taxonomy import find_col_zip
         if not find_col_zip():
-            messagebox.showerror("Administrare", "Nicio arhivă .zip în col/.", parent=self.root)
+            messagebox.showerror(t("title_admin"), t("err_no_zip"), parent=self.root)
             return
-        if not messagebox.askyesno("Administrare",
-            "Se importă denumirile populare din arhiva CoL (eng + rom).\n"
-            "Actualizează DOAR câmpurile goale, nu strică datele manuale.\n\nContinui?",
+        if not messagebox.askyesno(t("title_admin"),
+            t("confirm_import_vernacular"),
             parent=self.root):
             return
         self.admin_set_status("Import denumiri din CoL...")
@@ -5830,13 +6742,12 @@ class MainWindow:
                         f"Import CoL gata: {stats['updated']:,} actualizați "
                         f"(en: {stats['en_count']:,}, ro: {stats['ro_count']:,})."),
                     messagebox.showinfo(
-                        "Administrare",
-                        f"Import CoL gata: {stats['updated']:,} taxoni actualizați "
-                        f"(en: {stats['en_count']:,}, ro: {stats['ro_count']:,}).",
+                        t("title_admin"),
+                        t("info_import_col_done").format(stats['updated'], stats['en_count'], stats['ro_count']),
                         parent=self.root)))
             except Exception as exc:
                 self.root.after(0, lambda: messagebox.showerror(
-                    "Administrare", f"Import CoL eșuat:\n\n{exc}", parent=self.root))
+                    t("title_admin"), t("err_import_col").format(exc), parent=self.root))
         threading.Thread(target=worker, daemon=True).start()
 
     def admin_extract_book(self):
@@ -5892,7 +6803,7 @@ class MainWindow:
             mod = self._load_tool_module("book_source.py")
             mod.load_rules()  # creează fișierul implicit dacă lipsește
         except Exception as exc:
-            messagebox.showerror("Administrare", f"Nu pot pregăti regulile:\n{exc}",
+            messagebox.showerror(t("title_admin"), t("err_cannot_prepare_rules").format(exc),
                                  parent=self.root)
             return
         rules_path = mod.RULES_PATH
@@ -5919,7 +6830,7 @@ class MainWindow:
             try:
                 json.loads(content)
             except Exception as exc:
-                messagebox.showerror("Reguli parsare", f"JSON invalid:\n\n{exc}",
+                messagebox.showerror(t("err_parse_rules_title"), t("err_json_invalid").format(exc),
                                      parent=win)
                 return
             rules_path.write_text(content + "\n", encoding="utf-8")
@@ -6032,11 +6943,49 @@ class MainWindow:
             os.startfile(str(COL_DIR))
         except Exception as exc:
             messagebox.showerror(
-                "Administrare",
-                f"Nu pot deschide folderul:\n{COL_DIR}\n\n{exc}",
+                t("title_admin"),
+                t("err_cannot_open_folder").format(COL_DIR, exc),
                 parent=self.root,
             )
 
+
+    def _lookup_vernacular(self, scientific_name: str):
+        """(ro, en, other English variants) for *scientific_name*.
+
+        Best effort by design: a missing cache or an unknown name yields
+        empty values instead of an error, because both callers treat "not in
+        the database" as "nothing to offer".
+        """
+        name = (scientific_name or "").strip()
+        if not name:
+            return "", "", []
+        try:
+            chain = taxonomy_lookup_chain(name) or {}
+        except Exception:
+            return "", "", []
+        return self._split_vernacular(
+            chain.get("ro_name"), chain.get("en_name")
+        )
+
+    @staticmethod
+    def _split_vernacular(ro_value, en_value):
+        """(ro, en, other English variants) from the database values.
+
+        taxonomy.db joins the vernacular names with "; " — only the first one
+        is the primary name, the rest are listed as alternatives.
+        """
+        def parts(value):
+            if not value:
+                return []
+            return [part.strip() for part in str(value).split(";") if part.strip()]
+
+        ro_parts = parts(ro_value)
+        en_parts = parts(en_value)
+        return (
+            ro_parts[0] if ro_parts else "",
+            en_parts[0] if en_parts else "",
+            en_parts[1:],
+        )
 
     def update_species_classification(self, prefill: dict | None = None):
         """
@@ -6054,8 +7003,8 @@ class MainWindow:
         item = get_catalog_item(self.image_path, OUTPUT_DIR)
         if not item:
             messagebox.showinfo(
-                "Catalog",
-                "Analizează imaginea înainte de reclasificare.",
+                t("title_catalog"),
+                t("info_analyze_before_reclassify"),
                 parent=self.root,
             )
             return
@@ -6065,10 +7014,14 @@ class MainWindow:
         form.title("Update species")
         form.transient(self.root)
         form.grab_set()
-        form.geometry("480x300")
+        form.geometry("480x340")
         form.resizable(True, True)
 
         values = {}
+
+        # ttk.Entry has no trace_add(); watching a StringVar is the only
+        # reliable way to notice the user typing.
+        sci_var = tk.StringVar(master=form)
 
         for idx, (label, key) in enumerate([
             (t("form_category_hint"), "category"),
@@ -6082,10 +7035,52 @@ class MainWindow:
                 initial = prefill[key]
             if key == "category":
                 initial = initial or "Plant"
-            entry = ttk.Entry(form, width=50)
-            entry.insert(0, initial)
+            if key == "scientific_name":
+                entry = ttk.Entry(form, width=50, textvariable=sci_var)
+                sci_var.set(initial)
+            else:
+                entry = ttk.Entry(form, width=50)
+                entry.insert(0, initial)
             entry.pack(padx=12, pady=2)
             values[key] = entry
+
+        def set_entry(entry, text):
+            entry.delete(0, tk.END)
+            entry.insert(0, text)
+
+        def on_names_from_col():
+            """Fills the two common-name fields from taxonomy.db.
+
+            Nothing is shown when the typed species has no vernacular names
+            in the database: there is simply nothing to offer, and a popup
+            would only get in the way. Otherwise the user confirms once and
+            both fields are filled in.
+            """
+            name = sci_var.get().strip()
+            ro_name, en_name, extra = self._lookup_vernacular(name)
+            if not ro_name and not en_name:
+                return
+
+            if ro_name and en_name:
+                text = t("form_names_confirm").format(
+                    name=name, ro=ro_name, en=en_name
+                )
+            else:
+                text = t("form_names_confirm_one").format(
+                    name=name,
+                    lang="română" if ro_name else "engleză",
+                    value=ro_name or en_name,
+                )
+            if extra:
+                text += t("form_names_extra").format(variants=", ".join(extra))
+            if not messagebox.askyesno(
+                t("btn_names_from_col"), text, parent=form
+            ):
+                return
+            if ro_name:
+                set_entry(values["ro_name"], ro_name)
+            if en_name:
+                set_entry(values["en_name"], en_name)
 
         def on_ok():
             form.result = {k: entry.get() for k, entry in values.items()}
@@ -6100,6 +7095,37 @@ class MainWindow:
         ttk.Button(buttons, text=t("btn_ok"), command=on_ok).pack(side="left", padx=(0, 8))
         ttk.Button(buttons, text=t("btn_cancel"), command=on_cancel).pack(side="left")
 
+        # Packed after the OK/Cancel row, so it sits just above it. It stays
+        # hidden until a scientific name is typed: before that there is nothing
+        # to look up.
+        names_row = ttk.Frame(form)
+        names_row.pack(side="bottom", pady=(0, 8))
+        names_button = ttk.Button(
+            names_row,
+            text=t("btn_names_from_col"),
+            command=on_names_from_col,
+        )
+        # Not packed here on purpose: sync_names_button() decides, and it runs
+        # once at the end.
+
+        # Own flag instead of winfo_ismapped(): a packed child of a hidden
+        # window still reports "not mapped", which would break the hiding.
+        names_shown = [False]
+
+        def sync_names_button(*_args):
+            typed = sci_var.get().strip()
+            wanted = bool(typed) and typed not in ("Necunoscut", "Unknown")
+            if wanted == names_shown[0]:
+                return
+            names_shown[0] = wanted
+            if wanted:
+                names_button.pack()
+            else:
+                names_button.pack_forget()
+
+        sci_var.trace_add("write", sync_names_button)
+        sync_names_button()
+
         form.result = None
         form.wait_window()
 
@@ -6113,8 +7139,8 @@ class MainWindow:
 
         if not scientific_name:
             messagebox.showwarning(
-                "Update species",
-                "Numele științific este obligatoriu.",
+                t("title_update_species"),
+                t("warn_sci_name_required"),
                 parent=self.root,
             )
             return
@@ -6129,22 +7155,26 @@ class MainWindow:
                 en_name,
             )
             self.update_catalog_buttons()
-            self.set_status(f"Catalog updated: {destination.parent.name}")
+
+            # Reîncărcăm panourile cu datele deja corectate: altfel
+            # „Output items” și profilul specii arată în continuare vechea
+            # identificare, deși rândul din catalog o indică pe cea nouă.
+            self.load_saved_result(self.image_path)
+            self.set_status(t("status_catalog_updated_name").format(destination.parent.name))
 
             # Singurul pop-up de confirmare pentru reîncărcare
             if messagebox.askyesno(
-                "Catalog updated",
-                "Încadrarea a fost actualizată.\n\n"
-                "Vrei să rulezi din nou promptul pentru a regenera descrierea?",
+                t("title_catalog_updated"),
+                t("confirm_rerun_after_update"),
                 parent=self.root,
             ):
                 self.start_analysis()
             else:
                 self.set_status(
-                    f"Catalog updated; analysis pending: {destination.parent.name}"
+                    t("status_catalog_updated_pending").format(destination.parent.name)
                 )
         except Exception as exc:
-            messagebox.showerror("Catalog update failed", str(exc), parent=self.root)
+            messagebox.showerror(t("err_catalog_update"), str(exc), parent=self.root)
 
     # În interiorul clasei MainWindow – adiacent altor metode ca get_catalog_item etc.
     # Sugerat: imediat după metoda update_species_classification()
@@ -6175,7 +7205,7 @@ class MainWindow:
         if hasattr(self, "catalog_info_label"):
             self.catalog_info_label.config(text=info_text)
         else:
-            messagebox.showinfo("Info poză", info_text)
+            messagebox.showinfo(t("title_photo_info"), info_text)
 
 
     def save_analysis_result(self, response: str, prompt: str, preset_name: str):
@@ -6197,8 +7227,8 @@ class MainWindow:
 
         if not response:
             messagebox.showwarning(
-                "Nothing to save",
-                "There is no result to save."
+                t("warn_nothing_to_save_title"),
+                t("warn_no_result_to_save")
             )
             return
 
@@ -6210,16 +7240,15 @@ class MainWindow:
             )
         except Exception as exc:
             messagebox.showerror(
-                "Save error",
+                t("err_save"),
                 str(exc)
             )
             return
 
         if not updated:
             messagebox.showinfo(
-                "Save",
-                "Imaginea nu este în catalog.\n\n"
-                "Rulează ANALYZE mai întâi pentru a o identifica.",
+                t("title_save"),
+                t("info_not_in_catalog"),
                 parent=self.root,
             )
             return
@@ -6229,7 +7258,7 @@ class MainWindow:
         )
 
         self.set_status(
-            f"Saved: {self.image_path.name}"
+            t("status_saved_name").format(self.image_path.name)
         )
 
     def save_current_profile(self):
@@ -6243,8 +7272,8 @@ class MainWindow:
 
         if not response.strip():
             messagebox.showwarning(
-                "Nothing to save",
-                "There is no profile to save."
+                t("warn_nothing_to_save_title"),
+                t("warn_no_profile_to_save")
             )
             return
 
@@ -6255,8 +7284,8 @@ class MainWindow:
 
         if not item:
             messagebox.showinfo(
-                "Species profile",
-                "Analizează imaginea înainte de a salva profilul.",
+                t("title_species_profile"),
+                t("info_analyze_before_save_profile"),
                 parent=self.root,
             )
             return
@@ -6265,8 +7294,8 @@ class MainWindow:
 
         if not scientific_name or scientific_name in ("Necunoscut", "Unknown"):
             messagebox.showinfo(
-                "Species profile",
-                "Specia nu este încă identificată.",
+                t("title_species_profile"),
+                t("info_species_unknown"),
                 parent=self.root,
             )
             return
@@ -6279,7 +7308,7 @@ class MainWindow:
             )
         except Exception as exc:
             messagebox.showerror(
-                "Save error",
+                t("err_save"),
                 str(exc),
                 parent=self.root,
             )
@@ -6287,15 +7316,14 @@ class MainWindow:
 
         if not updated:
             messagebox.showinfo(
-                "Species profile",
-                f"Nu există profil salvat pentru:\n\n{scientific_name}\n\n"
-                "Apasă GEN PROFILE pentru a genera unul.",
+                t("title_species_profile"),
+                t("info_no_profile_saved").format(scientific_name),
                 parent=self.root,
             )
             return
 
         self.set_status(
-            f"Species profile saved: {scientific_name}"
+            t("status_profile_saved").format(scientific_name)
         )
 
     # ========================================================
@@ -6356,7 +7384,7 @@ class MainWindow:
         else:
             base_message = "Muse Glimmer is working"
 
-        self.set_status(f"{base_message} — {elapsed_str}")
+        self.set_status(t("status_base_elapsed").format(base_message, elapsed_str))
 
         # Schedule next update in 1 second
         self.status_update_timer = self.root.after(
@@ -6460,7 +7488,7 @@ class MainWindow:
 
         if not prompt:
             self.set_status(
-                f"Prompt not found: {name}"
+                t("status_prompt_not_found").format(name)
             )
             return
 
@@ -6469,7 +7497,7 @@ class MainWindow:
         )
 
         self.set_status(
-            f"Prompt loaded: {name}"
+            t("status_prompt_loaded").format(name)
         )
 
     def on_prompt_selected(self, event=None):
@@ -6486,8 +7514,8 @@ class MainWindow:
 
         if not name:
             messagebox.showwarning(
-                "No prompt selected",
-                "Select a prompt first."
+                t("warn_no_prompt_selected_title"),
+                t("info_select_prompt")
             )
             return
 
@@ -6495,8 +7523,8 @@ class MainWindow:
 
         if not prompt:
             messagebox.showwarning(
-                "Empty prompt",
-                "The prompt cannot be empty."
+                t("warn_empty_prompt_title"),
+                t("warn_prompt_empty_body")
             )
             return
 
@@ -6519,13 +7547,13 @@ class MainWindow:
                 pass
 
             self.set_status(
-                f"Prompt updated: {name}"
+                t("status_prompt_updated").format(name)
             )
 
         except Exception as exc:
 
             messagebox.showerror(
-                "Update prompt error",
+                t("err_update_prompt"),
                 str(exc)
             )
 
@@ -6543,8 +7571,8 @@ class MainWindow:
 
         if not name:
             messagebox.showwarning(
-                "Invalid name",
-                "The prompt name cannot be empty."
+                t("warn_invalid_name_title"),
+                t("warn_prompt_name_empty")
             )
             return
 
@@ -6562,7 +7590,7 @@ class MainWindow:
         except ValueError as exc:
 
             messagebox.showwarning(
-                "Prompt already exists",
+                t("err_prompt_exists_title"),
                 str(exc)
             )
             return
@@ -6570,7 +7598,7 @@ class MainWindow:
         except Exception as exc:
 
             messagebox.showerror(
-                "Create prompt error",
+                t("err_create_prompt"),
                 str(exc)
             )
 
@@ -6587,7 +7615,7 @@ class MainWindow:
         )
 
         self.set_status(
-            f"New prompt created: {name}"
+            t("status_prompt_created").format(name)
         )
         
 
