@@ -52,6 +52,9 @@ from core.catalog import (
     strip_structured_data,
     extract_structured_data,
     get_catalog_item,
+    set_catalog_archived,
+    count_archived_older_than,
+    purge_archived,
     get_manual_classification_context,
     get_profile_for_response,
     get_species_profile,
@@ -155,8 +158,9 @@ PROMPTS_DIR = APP_ROOT / "prompts"
 # Web lookups — verificarea externă a speciei identificate
 # ----------------------------------------------------
 
-COL_SEARCH_URL = "https://www.catalogueoflife.org/data/search"
+COL_SEARCH_URL = "https://www.catalogueoflife.org/data/search?q="
 WIKIPEDIA_SPECIES_URL = "https://en.wikipedia.org/wiki/"
+INATURALIST_SEARCH_URL = "https://www.inaturalist.org/taxa/search?q="
 
 ROMANIAN_COUNTIES = [
     "Alba",
@@ -706,6 +710,14 @@ class MainWindow:
         self.batch_current = 0
         self.batch_total = 0
         self.batch_filename = ""
+        # Per-image timing for ANALYZE ALL: when the current image started,
+        # so the status can show time-on-this-image plus a running average.
+        self.batch_image_start_time = None
+        # Running timing stats over REAL (non-cached) analyses only, so
+        # cached items (served in ~0s) don't drag the average and ETA down.
+        self.batch_analyzed_count = 0
+        self.batch_analyzed_time = 0.0
+        self.batch_cached_current = False
 
         # ----------------------------------------------------
         # Baza de date — inițializare centrală într-un singur loc
@@ -1386,6 +1398,16 @@ class MainWindow:
         )
         self.update_species_button.pack(side="left", padx=(8, 0))
 
+        # Soft-delete: ascunde poza din SpecioCatalog fără a șterge datele.
+        # Textul se schimbă între „Arhivează" și „Restaurează" după stare.
+        self.archive_button = ttk.Button(
+            analysis_buttons,
+            text=t("btn_archive"),
+            command=self.toggle_archive_current,
+            state="disabled"
+        )
+        self.archive_button.pack(side="left", padx=(8, 0))
+
         # ----------------------------------------------------
         # Grup mijloc: verificare web (CoL + Wikipedia)
         # ----------------------------------------------------
@@ -1418,6 +1440,16 @@ class MainWindow:
             command=self.open_wikipedia_page
         )
         self.wikipedia_button.pack(side="left", padx=(6, 0))
+
+        # iNaturalist: pagina de taxoni (identificare + ilustrații). Spre
+        # deosebire de CoL, acceptă query direct în URL, dar păstrăm și
+        # numele în clipboard ca la CoL, pentru lipire manuală dacă e cazul.
+        self.inaturalist_button = ttk.Button(
+            web_buttons,
+            text=t("btn_open_inaturalist"),
+            command=self.open_inaturalist_page
+        )
+        self.inaturalist_button.pack(side="left", padx=(6, 0))
 
         # ----------------------------------------------------
         # Grup dreapta: fluxul SPECIES PROFILE
@@ -1677,6 +1709,13 @@ class MainWindow:
             command=self.admin_open_col_folder,
             width=20
         ).pack(side="left")
+
+        ttk.Button(
+            admin_inner,
+            text=t("btn_purge_archived"),
+            command=self.admin_purge_archived,
+            width=24
+        ).pack(side="left", padx=(8, 0))
 
         self.admin_status = ttk.Label(
             admin_inner,
@@ -3290,12 +3329,14 @@ class MainWindow:
         profile_state = "disabled"
         load_profile_state = "disabled"
         web_name = ""
+        archived = False
 
         if self.image_path is not None:
             try:
                 item = get_catalog_item(self.image_path, OUTPUT_DIR)
                 if item:
                     state = "normal"
+                    archived = bool(item.get("archived"))
                     scientific_name = (item.get("scientific_name") or "").strip()
                     if scientific_name and scientific_name not in ("Necunoscut", "Unknown"):
                         profile_state = "normal"
@@ -3311,6 +3352,15 @@ class MainWindow:
 
         self.open_species_button.configure(state=state)
         self.update_species_button.configure(state=state)
+        # Arhivarea e disponibilă pentru orice poză catalogată; textul
+        # comută între „Arhivează" și „Restaurează" după starea curentă.
+        # Butonul rămâne activ cât există o imagine selectată, ca la apăsare
+        # pe o poză necatalogată să arate mesajul de ghidare (cum se încarcă
+        # poza din output/), nu să fie inactiv fără explicație.
+        self.archive_button.configure(
+            state="normal" if self.image_path is not None else "disabled",
+            text=t("btn_restore") if archived else t("btn_archive"),
+        )
         # Sincronizează câmpul de căutare (specie nouă selectată /
         # reanalyzată); textul scris manual se înlocuiește la schimbarea
         # contextului — utilizatorul îl poate reintroduce.
@@ -3331,6 +3381,44 @@ class MainWindow:
     def update_catalog_buttons_for_path(self, path: Path):
         if self.image_path == path:
             self.update_catalog_buttons()
+
+    def toggle_archive_current(self):
+        """Comută starea de arhivare a pozei curente (soft-delete reversibil).
+
+        Poza rămâne pe disc și în baza de date; doar flag-ul ``archived``
+        schimbă, astfel încât SpecioCatalog o ascunde (Arhivează) sau o
+        reafișează (Restaurează). Nu șterge nimic — decizia e reversibilă.
+        """
+        if self.image_path is None:
+            return
+        try:
+            item = get_catalog_item(self.image_path, OUTPUT_DIR)
+        except Exception:
+            item = None
+        if not item:
+            messagebox.showinfo(
+                t("title_catalog"), t("info_archive_howto"),
+                parent=self.root,
+            )
+            return
+
+        was_archived = bool(item.get("archived"))
+        try:
+            changed = set_catalog_archived(
+                self.image_path, OUTPUT_DIR, archived=not was_archived
+            )
+        except Exception as exc:
+            messagebox.showerror(
+                t("err_catalog_update"), str(exc), parent=self.root
+            )
+            return
+
+        if changed:
+            self.update_catalog_buttons()
+            if was_archived:
+                self.set_status(t("status_restored").format(self.image_path.name))
+            else:
+                self.set_status(t("status_archived").format(self.image_path.name))
 
     def on_profile_model_selected(self, _event=None):
         """
@@ -4497,6 +4585,10 @@ class MainWindow:
         self.analysis_start_time = None
         self.batch_current = 0
         self.batch_total = 0
+        self.batch_image_start_time = None
+        self.batch_analyzed_count = 0
+        self.batch_analyzed_time = 0.0
+        self.batch_cached_current = False
 
         self.progress.stop()
 
@@ -5215,6 +5307,9 @@ class MainWindow:
             # Update status immediately before processing
             self.batch_current = index
             self.batch_filename = path.name
+            # Timestamp the start of this image for per-image timing in the
+            # status bar (time on current image + running average).
+            self.batch_image_start_time = time.perf_counter()
             self.root.after(
                 0,
                 self.batch_status,
@@ -5274,6 +5369,7 @@ class MainWindow:
                     OUTPUT_DIR,
                     current_analysis_key,
                 )
+                self.batch_cached_current = bool(cached)
 
                 if cached:
                     response = cached["response_text"]
@@ -5405,8 +5501,15 @@ class MainWindow:
                     path,
                 )
 
+                # Count per-image time only for real (non-cached) analyses;
+                # cached items finish in ~0s and would skew the average/ETA.
+                _item_elapsed = time.perf_counter() - self.batch_image_start_time
+                if not self.batch_cached_current:
+                    self.batch_analyzed_time += _item_elapsed
+                    self.batch_analyzed_count += 1
+
                 completed += 1
-                
+
                 self.image_status[path] = "done"
 
                 self.root.after(
@@ -6077,6 +6180,10 @@ class MainWindow:
             buttons, text=t("btn_open_wikipedia"),
             command=lambda: self._browse_wikipedia_for(name)
         ).pack(side="left", padx=(6, 0))
+        ttk.Button(
+            buttons, text=t("btn_open_inaturalist"),
+            command=lambda: self._browse_inaturalist_for(name)
+        ).pack(side="left", padx=(6, 0))
 
         if accepted:
             def on_update() -> None:
@@ -6177,10 +6284,11 @@ class MainWindow:
         return name
 
     def _browse_col_for(self, name: str) -> None:
-        """Deschide pagina de căutare CoL și copiază numele în clipboard.
+        """Deschide pagina de căutare CoL cu ``name`` ca query direct în URL.
 
-        Site-ul CoL nu acceptă query în URL, deci numele (oricum căutat)
-        se pune automat în clipboard — pe pagină e doar Ctrl+V.
+        Site-ul CoL acceptă ``?q=`` în URL, deci căutarea pornește direct —
+        nu mai e nevoie de lipire manuală din clipboard. Numele se copiază
+        totuși și în clipboard, pentru ajustare manuală dacă e nevoie.
         ``name`` e numele de căutat; ignorat dacă e gol.
         """
         name = (name or "").strip()
@@ -6189,10 +6297,10 @@ class MainWindow:
                 self.root.clipboard_clear()
                 self.root.clipboard_append(name)
                 self.root.update()  # menține clipboard-ul după închidere
-                self.set_status(t("web_copied_clipboard").format(name=name))
             except Exception:
                 pass
-        webbrowser.open(COL_SEARCH_URL)
+            self.set_status(t("web_copied_clipboard").format(name=name))
+        webbrowser.open(COL_SEARCH_URL + quote(name))
 
     def _browse_wikipedia_for(self, name: str) -> None:
         """Deschide articolul Wikipedia; redirecționează sinonimele."""
@@ -6210,6 +6318,31 @@ class MainWindow:
     def open_wikipedia_page(self):
         """Wikipedia pentru textul din câmpul de căutare web."""
         self._browse_wikipedia_for(self._web_search_name())
+
+    def _browse_inaturalist_for(self, name: str) -> None:
+        """Deschide pagina de taxoni iNaturalist pentru ``name``.
+
+        Spre deosebire de CoL, iNaturalist acceptă query direct în URL, deci
+        numele e pus și în link. Îl copiem totuși și în clipboard — ca la CoL —
+        pentru lipire manuală, dacă utilizatorul vrea să ajusteze căutarea.
+        ``name`` e numele de căutat; ignorat dacă e gol.
+        """
+        name = (name or "").strip()
+        if not name or name in ("Necunoscut", "Unknown"):
+            messagebox.showinfo(t("web_title"), t("web_no_species"),
+                                parent=self.root)
+            return
+        try:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(name)
+            self.root.update()  # menține clipboard-ul după închidere
+        except Exception:
+            pass
+        webbrowser.open(INATURALIST_SEARCH_URL + quote(name) + "&view=list")
+
+    def open_inaturalist_page(self):
+        """iNaturalist pentru textul din câmpul de căutare web."""
+        self._browse_inaturalist_for(self._web_search_name())
 
     def open_quick_catalog_dialog(self):
         """Dialog pentru catalogare rapidă: alege imagini + specie din taxonomy.db."""
@@ -6596,7 +6729,7 @@ class MainWindow:
         self.help_notebook = ttk.Notebook(win)
         self.help_notebook.pack(fill="both", expand=True, padx=10, pady=(0, 10))
         self.help_pages = []
-        for section in ("start", "catalog", "books", "data"):
+        for section in ("start", "catalog", "archive", "books", "data"):
             page = ttk.Frame(self.help_notebook)
             self.help_notebook.add(page, text="")
             scrollbar = ttk.Scrollbar(page, orient="vertical")
@@ -6948,6 +7081,64 @@ class MainWindow:
                 parent=self.root,
             )
 
+    def admin_purge_archived(self):
+        """Șterge DEFINITIV pozele arhivate mai vechi de N zile (purge).
+
+        Operațiune distructivă și ireversibilă: cere întâi fereastra de timp,
+        apoi arată exact câte poze s-ar șterge și confirmarea explicita.
+        Fișierele de pe disc și rândurile din catalog dispar împreună.
+        """
+        answer = simpledialog.askinteger(
+            t("purge_title"),
+            t("purge_ask_days"),
+            parent=self.root,
+            initialvalue=30,
+            minvalue=1,
+            maxvalue=3650,
+        )
+        if not answer:
+            return
+
+        try:
+            victims = count_archived_older_than(OUTPUT_DIR, answer)
+        except Exception as exc:
+            messagebox.showerror(
+                t("title_admin"), str(exc), parent=self.root
+            )
+            return
+
+        if not victims:
+            messagebox.showinfo(
+                t("purge_title"),
+                t("purge_none").format(answer),
+                parent=self.root,
+            )
+            return
+
+        count = len(victims)
+        confirm = messagebox.askyesno(
+            t("purge_title"),
+            t("purge_confirm").format(count, answer),
+            parent=self.root,
+        )
+        if not confirm:
+            return
+
+        try:
+            deleted = purge_archived(OUTPUT_DIR, answer)
+        except Exception as exc:
+            messagebox.showerror(
+                t("title_admin"), str(exc), parent=self.root
+            )
+            return
+
+        self.set_status(t("purge_done").format(deleted))
+        messagebox.showinfo(
+            t("purge_title"),
+            t("purge_done").format(deleted),
+            parent=self.root,
+        )
+
 
     def _lookup_vernacular(self, scientific_name: str):
         """(ro, en, other English variants) for *scientific_name*.
@@ -7154,6 +7345,21 @@ class MainWindow:
                 ro_name,
                 en_name,
             )
+            # Fișierul a fost mutat în folderul noii specii: re-ancorăm
+            # starea GUI-ului la noua cale, altfel orice reîncărcare
+            # (load_saved_result, refresh_image_list, start_analysis)
+            # citește vechea cale — care nu mai există — și crapă cu
+            # FileNotFoundError. Relevant mai ales când poza e încărcată
+            # direct din output/ (fluxul de recatalogare).
+            old_path = self.image_path
+            try:
+                current_index = self.image_paths.index(old_path)
+                self.image_paths[current_index] = destination
+            except ValueError:
+                current_index = None
+            self.image_path = destination
+            if old_path in self.image_locations:
+                self.image_locations[destination] = self.image_locations.pop(old_path)
             self.update_catalog_buttons()
 
             # Reîncărcăm panourile cu datele deja corectate: altfel
@@ -7376,9 +7582,28 @@ class MainWindow:
         # Construct message dynamically for batch mode
         if self.batch_total > 0:
             if self.batch_filename:
-                base_message = f"Processing {self.batch_current + 1} / {self.batch_total}: {self.batch_filename}"
+                base_message = f"[{self.batch_current + 1}/{self.batch_total}] \"{self.batch_filename}\""
             else:
                 base_message = f"Processing batch: {self.batch_current + 1} / {self.batch_total}"
+            # Per-image timing: time on the current image, the running
+            # average over the finished ones, and an ETA for the rest.
+            img_start = getattr(self, "batch_image_start_time", None)
+            if img_start is not None:
+                cur = time.perf_counter() - img_start
+                timing = [f"cur {self.format_seconds(cur)}"]
+                # Average over the images actually analysed (cached items are
+                # skipped: they finish in ~0s and would distort the estimate).
+                analyzed = getattr(self, "batch_analyzed_count", 0)
+                if analyzed > 0:
+                    avg = self.batch_analyzed_time / analyzed
+                    timing.append(f"avg {self.format_seconds(avg)}")
+                    # Images still to process after the current one.
+                    remaining = self.batch_total - 1 - self.batch_current
+                    if remaining > 0:
+                        timing.append(
+                            f"left ~{self.format_seconds(avg * remaining)}"
+                        )
+                base_message += "  (" + " | ".join(timing) + ")"
         elif self.profile_start_time is not None:
             base_message = "Generating species profile"
         else:

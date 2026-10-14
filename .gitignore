@@ -1,3 +1,6 @@
+# Local CoL download helper (personal utility, not part of the app)
+col/download_CoL.py
+
 # Local caches (Catalogue of Life, taxonomy databases)
 col/*.zip
 col/taxonomy.db
@@ -27,6 +30,10 @@ denumiri_*.xlsx
 _*.py
 _verify_*.py
 _smoke_*.py
+
+# Local dev helper scripts (catalog reconciliation, one-off inspectors).
+# Kept locally for the maintainer, not part of the app or its distribution.
+/tools/dev_tools/
 
 # Local development utilities: versioned on purpose — they are the build
 # process (app_restart) and the regression net (test_*.py, i18n_lint.py).

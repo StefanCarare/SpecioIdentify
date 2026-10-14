@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS catalog_items (
     is_uncertain INTEGER,
     extra_fields_json TEXT NOT NULL,
     manual_override INTEGER NOT NULL DEFAULT 0,
+    archived INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 )
 """
@@ -80,6 +81,7 @@ CATALOG_ITEMS_COLUMN_MIGRATIONS = {
     "manual_location": "TEXT NOT NULL DEFAULT ''",
     "metadata_json": "TEXT NOT NULL DEFAULT '{}'",
     "statistics_json": "TEXT NOT NULL DEFAULT '{}'",
+    "archived": "INTEGER NOT NULL DEFAULT 0",
 }
 
 SPECIES_PROFILES_COLUMN_MIGRATIONS = {

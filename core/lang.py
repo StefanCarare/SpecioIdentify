@@ -139,13 +139,14 @@ STRINGS: dict[str, dict[str, str]] = {
     "help_catalog_title": {"ro": "Catalogare", "en": "Cataloguing"},
     "help_books_title": {"ro": "Denumiri din PDF", "en": "Names from PDF"},
     "help_data_title": {"ro": "Date și siguranță", "en": "Data and safety"},
+    "help_archive_title": {"ro": "Arhivare poze", "en": "Archiving photos"},
     "help_start_body": {
         "ro": (
             "SCOP\nIdentifică plante și animale din fotografii, verifică rezultatele și construiește un catalog cu profiluri de specie. Identificarea AI poate fi greșită; nu o folosi ca dovadă că o plantă sau ciupercă este comestibilă.\n\n"
             "1. PREGĂTIRE\nPornește Ollama și selectează un model compatibil cu imaginile. Pentru instalare, consultă README.md; pentru baza taxonomică, col/README.md și secțiunea Administrare.\n\n"
             "2. IDENTIFICARE\nAdaugă 2–3 fotografii, selectează una, alege un prompt potrivit și apasă ANALYZE. Citește Output Item și verifică specia. ANALYZE ALL procesează lista; începe cu un lot mic.\n\n"
             "OPRIREA UNUI LOT\nCât rulează ANALYZE ALL sau GEN PROFILE ALL, lângă bara de progres apare butonul ⏹ OPRESTE; scurtătura este Ctrl+. Butonul oprește lotul după imaginea în curs, fără să închidă aplicația: imaginile deja terminate rămân salvate, iar butoanele se reactivează imediat. Poți relua oricând. Închiderea ferestrei cu X oprește totul, dar pierde sesiunea.\n\n"
-            "VERIFICARE WEB (AUXILIAR)\nCâmpul de lângă butoanele 🌐 CoL și 🌐 WIKIPEDIA se completează cu specia identificată și acceptă alternative scrise manual. 🌐 CoL deschide Catalogue of Life și copiază numele în clipboard — pe pagină e doar Ctrl+V. 🌐 WIKIPEDIA deschide articolul speciei: sinonimele sunt redirecționate la numele acceptat, util când CoL nu recunoaște numele dat de model. Aceleași butoane apar și în fereastra de atenționare a verificării CoL.\n\n"
+            "VERIFICARE WEB (AUXILIAR)\nCâmpul de lângă butoanele 🌐 CoL și 🌐 WIKIPEDIA se completează cu specia identificată și acceptă alternative scrise manual. 🌐 CoL deschide Catalogue of Life direct cu numele ca termen de căutare. 🌐 WIKIPEDIA deschide articolul speciei: sinonimele sunt redirecționate la numele acceptat, util când CoL nu recunoaște numele dat de model. Aceleași butoane apar și în fereastra de atenționare a verificării CoL.\n\n"
             "3. SALVARE ȘI CORECTARE\nO analiză cu identificare recunoscută de parser este catalogată automat: imaginea se copiază în output, iar analiza se salvează în baza de date. SAVE păstrează editările textului pentru o înregistrare existentă. Pentru schimbarea clasificării folosește UPDATE SPECIES, nu doar editarea textului. Dacă identificarea nu a fost recunoscută, verifică întâi catalogarea; simpla afișare a unui răspuns nu garantează salvarea.\n\n"
             "4. PROFILUL SPECIEI\nDupă verificarea speciei, folosește GEN PROFILE. Verifică descrierea din Species Profile și folosește SAVE PROFILE pentru editările tale. LOAD PROFILE reîncarcă profilul salvat; salvează modificările înainte de reîncărcare. Profilul aparține speciei, nu unei singure fotografii."
         ),
@@ -154,7 +155,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "1. PREPARATION\nStart Ollama and select an image-capable model. See README.md for installation; for the taxonomy database, see col/README.md and the Admin section.\n\n"
             "2. IDENTIFICATION\nAdd 2–3 photos, select one, choose a suitable prompt and press ANALYZE. Read Output Item and verify the species. ANALYZE ALL processes the list; start with a small batch.\n\n"
             "STOPPING A BATCH\nWhile ANALYZE ALL or GEN PROFILE ALL is running, a ⏹ STOP button appears next to the progress bar; the shortcut is Ctrl+. The button stops the batch after the image in flight, without closing the app: images already finished stay saved and the buttons become usable again immediately. You can resume at any time. Closing the window with X stops everything but loses the session.\n\n"
-            "WEB VERIFICATION (AUXILIARY)\nThe field next to the 🌐 CoL and 🌐 WIKIPEDIA buttons is pre-filled with the identified species and also accepts manually typed alternatives. 🌐 CoL opens the Catalogue of Life and copies the name to the clipboard — on the page it is just Ctrl+V. 🌐 WIKIPEDIA opens the species article: synonyms redirect to the accepted name, useful when CoL does not recognise the model's name. The same helpers appear in the Catalogue of Life warning dialog.\n\n"
+            "WEB VERIFICATION (AUXILIARY)\nThe field next to the 🌐 CoL and 🌐 WIKIPEDIA buttons is pre-filled with the identified species and also accepts manually typed alternatives. 🌐 CoL opens the Catalogue of Life directly with the name as the search term. 🌐 WIKIPEDIA opens the species article: synonyms redirect to the accepted name, useful when CoL does not recognise the model's name. The same helpers appear in the Catalogue of Life warning dialog.\n\n"
             "3. SAVING AND CORRECTIONS\nAn analysis whose identification is recognised by the parser is catalogued automatically: the image is copied into output and the analysis is stored in the database. SAVE keeps text edits for an existing record. Use UPDATE SPECIES to change the classification, rather than only editing the text. If identification was not recognised, check cataloguing first; a displayed response does not guarantee that it was saved.\n\n"
             "4. SPECIES PROFILE\nAfter verifying the species, use GEN PROFILE. Review the description in Species Profile and use SAVE PROFILE to keep your edits. LOAD PROFILE reloads the saved profile; save changes before reloading. A profile belongs to the species, not just one photo."
         ),
@@ -170,6 +171,18 @@ STRINGS: dict[str, dict[str, str]] = {
     "help_data_body": {
         "ro": "CE PĂSTREZI\noutput/catalog.db conține analizele și profilurile speciilor. Fotografiile catalogate sunt în folderele de specii din output. Păstrează baza și imaginile împreună în backup, preferabil cu aplicația închisă. col/taxonomy.db este o bază separată, pentru taxonomie și denumiri.\n\nINPUT ESTE TEMPORAR\nȘterge originalele numai după verificarea copiei din output și a înregistrării în catalog. Închide aplicația înainte de golirea Input, pentru a evita căile șterse din lista deschisă. Nu toate analizele produc o catalogare reușită.\n\nMUTARE ȘI EDITARE\nCăile imaginilor catalogate sunt relative la output; poți muta proiectul păstrând baza și structura folderelor împreună. Căile absolute vechi din structura standard sunt rezolvate în locația curentă. Modificarea conținutului imaginilor poate schimba hash-ul folosit la regăsire. Nu muta sau recomprima singura copie fără backup.\n\nSALVARE\nSAVE și SAVE PROFILE salvează în baza de date. Deschiderea ghidului nu modifică datele.",
         "en": "WHAT TO KEEP\noutput/catalog.db contains analyses and species profiles. Catalogued photos are in species folders under output. Back up the database and images together, preferably with the application closed. col/taxonomy.db is separate, for taxonomy and names.\n\nINPUT IS TEMPORARY\nDelete originals only after checking the output copy and its catalogue record. Close the application before clearing Input to avoid deleted paths in the open list. Not every analysis results in successful cataloguing.\n\nMOVING AND EDITING\nCatalogued image paths are relative to output; you can move the project while keeping the database and folder structure together. Legacy absolute paths in the standard layout are resolved at the current location. Changing image content can change the hash used for lookup. Do not move or recompress your only copy without a backup.\n\nSAVING\nSAVE and SAVE PROFILE write to the database. Opening this guide does not change your data.",
+    },
+    "help_archive_body": {
+        "ro": (
+            "ARHIVARE (SOFT-DELETE)\nButonul ARCHIVE ascunde poza din SpecioCatalog fără s-o șteargă: fișierul rămâne pe disc, iar rândul rămâne în catalog.db — decizia e reversibilă cu RESTORE.\n\n"
+            "FLUXUL COMPLET\n1. Selectezi poza in SpecioCatalog.\n2. In SpecioIdentify: Add Folder cu folderul speciei din output/ si selectezi poza, apoi ARCHIVE.\n3. Verifici in SpecioCatalog cu Show archived.\n\n"
+            "PURGE\nPozele arhivate de mult se șterg definitiv din Administrare → PURGE ARCHIVED (cere numărul de zile, arată câte poze, cere confirmare). Purge-ul este ireversibil."
+        ),
+        "en": (
+            "ARCHIVING (SOFT-DELETE)\nThe ARCHIVE button hides the photo from SpecioCatalog without deleting it: the file stays on disk and the row stays in catalog.db — the decision is reversible with RESTORE.\n\n"
+            "FULL FLOW\n1. Pick the photo in SpecioCatalog.\n2. In SpecioIdentify: Add Folder with the species folder under output/ and select the photo, then ARCHIVE.\n3. Check in SpecioCatalog with Show archived.\n\n"
+            "PURGE\nLong-archived photos are deleted permanently from Administration → PURGE ARCHIVED (asks for days, shows how many photos, asks for confirmation). Purging cannot be undone."
+        ),
     },
     # ---- First-run setup check ----
     "setup_title": {"ro": "Configurare inițială", "en": "Initial setup"},
@@ -223,6 +236,9 @@ STRINGS: dict[str, dict[str, str]] = {
     },
     "btn_quick_catalog": {"ro": "📁 QUICK CATALOG", "en": "📁 QUICK CATALOG"},
     "btn_update_species": {"ro": "UPDATE SPECIES", "en": "UPDATE SPECIES"},
+    "btn_archive": {"ro": "🗄 ARCHIVE", "en": "🗄 ARCHIVE"},
+    "btn_restore": {"ro": "♻ RESTORE", "en": "♻ RESTORE"},
+    "btn_purge_archived": {"ro": "🧹 PURGE ARCHIVED", "en": "🧹 PURGE ARCHIVED"},
     "confirm_selection_used": {
         "ro": "ATENȚIE: se va folosi doar selecția — {chosen} din {total} "
               "imagini încărcate.",
@@ -371,6 +387,7 @@ STRINGS: dict[str, dict[str, str]] = {
     "info_analyze_before_save_profile": {"ro": "Analizează imaginea înainte de a salva profilul.", "en": "Analyze the image before saving the profile."},
     "info_enter_prompt": {"ro": "Introdu mai întâi un prompt.", "en": "Enter a prompt first."},
     "info_image_not_cataloged": {"ro": "Imaginea nu este încă în catalog.", "en": "The image is not in the catalog yet."},
+    "info_archive_howto": {"ro": "Imaginea nu este încă încărcată în catalog. Pentru arhivare: Add Folder → folderul speciei din output/ → selectează poza → ARCHIVE.", "en": "The image is not loaded in the catalog yet. To archive: Add Folder → the species folder under output/ → select the photo → ARCHIVE."},
     "info_profile_done_title": {"ro": "Profil finalizat", "en": "Profile complete"},
     "info_select_image": {"ro": "Selectează mai întâi o imagine.", "en": "Select an image first."},
     "info_select_prompt": {"ro": "Selectează mai întâi un prompt.", "en": "Select a prompt first."},
@@ -380,6 +397,13 @@ STRINGS: dict[str, dict[str, str]] = {
     "status_ready_idle": {"ro": "Gata", "en": "Ready"},
     "status_species_prompt_updated": {"ro": "Promptul speciei a fost actualizat", "en": "Species prompt updated"},
     "status_working": {"ro": "Se lucrează...", "en": "Muse Glimmer is working..."},
+    "status_archived": {"ro": "Arhivat: {0} — ascuns în SpecioCatalog.", "en": "Archived: {0} — hidden in SpecioCatalog."},
+    "status_restored": {"ro": "Restaurat: {0} — vizibil din nou în SpecioCatalog.", "en": "Restored: {0} — visible again in SpecioCatalog."},
+    "purge_title": {"ro": "Purge poze arhivate", "en": "Purge archived photos"},
+    "purge_ask_days": {"ro": "Șterge definitiv pozele arhivate mai vechi de câte zile?", "en": "Permanently delete archived photos older than how many days?"},
+    "purge_none": {"ro": "Nicio poză arhivată mai veche de {0} zile. Nimic de șters.", "en": "No archived photos older than {0} days. Nothing to delete."},
+    "purge_confirm": {"ro": "Atenție: {0} poză/poze arhivate mai vechi de {1} zile vor fi ȘTERSE DEFINITIV (fișier + rând din catalog). Această acțiune e ireversibilă. Continui?", "en": "Warning: {0} archived photo(s) older than {1} days will be PERMANENTLY DELETED (file + catalog row). This cannot be undone. Continue?"},
+    "purge_done": {"ro": "Șterse definitiv {0} poză/poze arhivate.", "en": "Permanently deleted {0} archived photo(s)."},
     "title_admin": {"ro": "Administrare", "en": "Administration"},
     "title_catalog": {"ro": "Catalog", "en": "Catalog"},
     "title_catalog_updated": {"ro": "Catalog actualizat", "en": "Catalog updated"},
@@ -424,6 +448,7 @@ STRINGS: dict[str, dict[str, str]] = {
     },
     "btn_open_col": {"ro": "🌐 CoL", "en": "🌐 CoL"},
     "btn_open_wikipedia": {"ro": "🌐 WIKIPEDIA", "en": "🌐 WIKIPEDIA"},
+    "btn_open_inaturalist": {"ro": "🌐 iNAT", "en": "🌐 iNAT"},
     "btn_gen_profile": {"ro": "GEN PROFILE", "en": "GEN PROFILE"},
     "btn_load_profile": {"ro": "LOAD PROFILE", "en": "LOAD PROFILE"},
     "btn_save_profile": {"ro": "SAVE PROFILE", "en": "SAVE PROFILE"},
@@ -640,8 +665,8 @@ STRINGS: dict[str, dict[str, str]] = {
                "(e.g. Lavatera trimestris) or run ANALYZE first."),
     },
     "web_copied_clipboard": {
-        "ro": "\"{name}\" copiat în clipboard — lipește (Ctrl+V) în căutarea CoL.",
-        "en": "\"{name}\" copied to clipboard — paste (Ctrl+V) in the CoL search.",
+        "ro": "\"{name}\" — căutare CoL deschisă (numele e și în clipboard).",
+        "en": "\"{name}\" — CoL search opened (name also in clipboard).",
     },
 
 }

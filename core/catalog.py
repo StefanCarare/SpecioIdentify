@@ -1057,6 +1057,97 @@ def get_catalog_item(image_path: Path, output_dir: Path) -> dict | None:
         connection.close()
 
 
+def set_catalog_archived(
+    image_path: Path,
+    output_dir: Path,
+    archived: bool,
+) -> bool:
+    """Marchează/dezactivează o poză ca „arhivată" (soft-delete).
+
+    Nu atinge fișierul de pe disc: doar setează flag-ul ``archived`` pe
+    rândul din catalog. SpecioCatalog ascunde rândurile arhivate, dar datele
+    rămân — astfel decizia e reversibilă. Returnează True dacă s-a actualizat
+    o înregistrare (adică imaginea era în catalog).
+    """
+    item = get_catalog_item(image_path, output_dir)
+    if not item:
+        return False
+
+    connection = connect(Path(output_dir) / "catalog.db")
+    try:
+        connection.execute(
+            "UPDATE catalog_items SET archived = ? WHERE image_hash = ?",
+            (1 if archived else 0, item["image_hash"]),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    return True
+
+
+def count_archived_older_than(output_dir: Path, older_than_days: int) -> list[dict]:
+    """Rândurile arhivate mai vechi de ``older_than_days`` zile.
+
+    „Vechi" se măsoară de la ``created_at`` (momentul catalogării inițiale),
+    nu de la arhivare — coloana nu urmărește când a fost arhivată. Folosit de
+    purge pentru a-i arăta utilizatorului exact ce s-ar șterge definitiv.
+    """
+    connection = connect(Path(output_dir) / "catalog.db")
+    try:
+        rows = connection.execute(
+            "SELECT id, scientific_name, category, catalog_path, created_at "
+            "FROM catalog_items "
+            "WHERE archived = 1 "
+            "AND created_at <= datetime('now', ?) "
+            "ORDER BY created_at",
+            (f"-{int(older_than_days)} days",),
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        connection.close()
+
+
+def purge_archived(output_dir: Path, older_than_days: int) -> int:
+    """Șterge DEFINITIV pozele arhivate mai vechi de ``older_than_days`` zile.
+
+    Spre deosebire de arhivare (soft-delete, reversibil), aceasta operațiune
+    e distructivă: șterge atât fișierul de pe disc, cât și rândul din catalog.
+    Folderele rămase goale sunt curățate. Returnează numărul de poze șterse.
+    """
+    output_dir = Path(output_dir)
+    victims = count_archived_older_than(output_dir, older_than_days)
+    if not victims:
+        return 0
+
+    connection = connect(output_dir / "catalog.db")
+    deleted = 0
+    try:
+        for row in victims:
+            # Rezolvăm fișierul și îl ștergem de pe disc (dacă mai există).
+            try:
+                resolved = resolve_catalog_path(row["catalog_path"], output_dir)
+            except Exception:
+                resolved = None
+            if resolved is not None and resolved.is_file():
+                parent = resolved.parent
+                try:
+                    resolved.unlink()
+                except OSError:
+                    pass
+                # Curățăm folderul speciei dacă a rămas gol.
+                _remove_folder_if_empty(parent, output_dir.resolve())
+            connection.execute(
+                "DELETE FROM catalog_items WHERE id = ?", (row["id"],)
+            )
+            deleted += 1
+        connection.commit()
+    finally:
+        connection.close()
+
+    return deleted
+
+
 def update_catalog_response(
     image_path: Path,
     output_dir: Path,
@@ -1507,12 +1598,58 @@ def quick_catalog_images(
                 continue
             try:
                 image_hash = _image_hash(src)
+
+                # O imagine deja in catalog (acelasi continut => acelasi hash)
+                # NU mai este ignorata in silenta: o tratam ca pe o
+                # reclasificare, exact ca `update_catalog_classification`
+                # (butonul Update Species). Fara acest branch, `INSERT OR
+                # IGNORE` arunca randul pe constrangerea UNIQUE(image_hash) —
+                # fisierul era copiat pe disk dar nu exista rand in DB, deci
+                # poza nu aparea in SpecioCatalog.
+                existing = connection.execute(
+                    "SELECT catalog_path FROM catalog_items WHERE image_hash = ?",
+                    (image_hash,),
+                ).fetchone()
+
+                if existing is not None:
+                    new_catalog_path = _relocate_catalog_file(
+                        connection,
+                        output_dir,
+                        image_hash,
+                        existing["catalog_path"],
+                        category,
+                        species_key,
+                    )
+                    connection.execute(
+                        """
+                        UPDATE catalog_items
+                        SET category = ?, scientific_name = ?, kingdom = ?,
+                            genus = ?, species = ?, ro_name = ?, en_name = ?,
+                            catalog_path = ?, manual_location = ?, analysis_key = NULL,
+                            manual_override = 1
+                        WHERE image_hash = ?
+                        """,
+                        (
+                            category,
+                            scientific_name,
+                            kingdom,
+                            genus,
+                            species_epithet,
+                            db_ro,
+                            db_en,
+                            new_catalog_path,
+                            manual_location or "",
+                            image_hash,
+                        ),
+                    )
+                    connection.commit()
+                    copied += 1
+                    continue
+
                 dest = catalog_folder / (
                     f"{species_key}_{next_number:04d}{src.suffix.lower()}"
                 )
-                shutil.copy2(src, dest)
-
-                connection.execute(
+                cursor = connection.execute(
                     """INSERT OR IGNORE INTO catalog_items (
                         image_hash, original_path, catalog_path,
                         scientific_name, category, kingdom, genus, species,
@@ -1526,9 +1663,15 @@ def quick_catalog_images(
                      f"quick-{image_hash[:12]}",
                      f"Catalogat manual ca {scientific_name}.", "{}"),
                 )
+                # Copiem fisierul pe disk DOAR daca randul a intrat efectiv in
+                # DB (cursor.rowcount == 1). Daca `INSERT OR IGNORE` ignora
+                # inserarea (hash duplicat introdus intre timp de alt proces),
+                # rowcount este 0 si nu mai lasam un fisier orfan pe disk.
+                if cursor.rowcount:
+                    shutil.copy2(src, dest)
+                    next_number += 1
                 connection.commit()
                 copied += 1
-                next_number += 1
             except Exception as exc:
                 errors.append(f"{src.name}: {exc}")
 
