@@ -348,6 +348,7 @@ STRINGS: dict[str, dict[str, str]] = {
     "status_batch_finished": {"ro": "Lot încheiat: {0}/{1}, erori: {2} — {3}", "en": "Batch finished: {0}/{1}, errors: {2} — {3}"},
     "status_catalog_updated_name": {"ro": "Catalog actualizat: {0}", "en": "Catalog updated: {0}"},
     "status_catalog_updated_pending": {"ro": "Catalog actualizat; analiză în așteptare: {0}", "en": "Catalog updated; analysis pending: {0}"},
+    "info_catalog_updated_multi": {"ro": "Catalog actualizat pentru {ok} din {total} imagini.", "en": "Catalog updated for {ok} of {total} images."},
     "status_done": {"ro": "Gata — {0}", "en": "Done — {0}"},
     "status_generating_profile": {"ro": "Generează profilul speciei: {0}...", "en": "Generating species profile: {0}..."},
     "status_generating_profile_n": {"ro": "Generează profilul speciei {0} / {1}: {2}...", "en": "Generating species profile {0} / {1}: {2}..."},
@@ -372,6 +373,7 @@ STRINGS: dict[str, dict[str, str]] = {
     "status_step_error": {"ro": "Eroare {0} / {1}: {2}", "en": "Error {0} / {1}: {2}"},
     "err_analysis_failed": {"ro": "Analiza a eșuat", "en": "Analysis failed"},
     "err_catalog_update": {"ro": "Actualizarea catalogului a eșuat", "en": "Catalog update failed"},
+    "err_catalog_update_multi": {"ro": "Actualizate {ok} din {total} imagini. Erori:\n{errors}", "en": "Updated {ok} of {total} images. Errors:\n{errors}"},
     "err_create_prompt": {"ro": "Eroare la crearea promptului", "en": "Create prompt error"},
     "err_image": {"ro": "Eroare imagine", "en": "Image error"},
     "err_initial_config": {"ro": "Configurare inițială", "en": "Initial configuration"},
@@ -513,7 +515,7 @@ STRINGS: dict[str, dict[str, str]] = {
     },
     # ---- Quick Catalog dialog ----
     # Notă: valorile categoriei (Plant/Mushroom/Insect/Reptile/Amphibian/
-    # Bird/Mammal/Animal/Other) NU se traduc — sunt chei de date
+    # Bird/Mammal/Animal/Protozoa/Other) NU se traduc — sunt chei de date
     # (mappate pe foldere + salvate în catalog).
     "qc_title": {"ro": "Catalog rapid", "en": "Quick Catalog"},
     "qc_no_images": {"ro": "Adaugă mai întâi imagini.", "en": "Add images first."},
@@ -528,6 +530,20 @@ STRINGS: dict[str, dict[str, str]] = {
     },
     "qc_show_pics": {"ro": "🔎 Arată imagini", "en": "🔎 Show images"},
     "qc_hide_pics": {"ro": "🙈 Ascunde imagini", "en": "🙈 Hide images"},
+    "qc_load_images": {"ro": "📥 Încarcă imagini", "en": "📥 Load images"},
+    "qc_load_images_title": {
+        "ro": "Alege imagini de încărcat (din orice folder)",
+        "en": "Choose images to load (from any folder)",
+    },
+    "qc_load_folder": {"ro": "📂 Folder întreg", "en": "📂 Whole folder"},
+    "qc_load_folder_title": {
+        "ro": "Alege folderul de imagini (înlocuiește pozele din dialog)",
+        "en": "Choose the image folder (replaces the photos in this dialog)",
+    },
+    "qc_folder_empty": {
+        "ro": "Folderul nu conține imagini.",
+        "en": "The folder contains no images.",
+    },
     "qc_catalogued_photo": {"ro": "Poză catalogată", "en": "Catalogued photo"},
     "qc_sci_name_label": {
         "ro": "Numele științific (autocomplete din taxonomy.db):",
@@ -570,10 +586,22 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "Catalogued: {n} image(s).\n\nDestination:\n{folder}",
     },
     "qc_catalog_btn": {"ro": "📁 Catalogează", "en": "📁 Catalogue"},
+    # Previzualizarea unei poze (click pe miniatură / dublu-click)
+    "qc_preview_title": {"ro": "Previzualizare poză", "en": "Photo preview"},
+    "qc_preview_missing": {
+        "ro": "Nu pot încărca poza.",
+        "en": "Cannot load the photo.",
+    },
+    "qc_copy_path": {"ro": "Copiază calea", "en": "Copy path"},
+    "qc_web_search": {"ro": "🌐 Caută pe internet:", "en": "🌐 Search the web:"},
+    "qc_copy_hint": {
+        "ro": "Selectează textul și apasă Ctrl+C ca să copiezi.",
+        "en": "Select the text and press Ctrl+C to copy.",
+    },
     # Formular Update Species
     "form_category_hint": {
-        "ro": "Categorie (Plant, Mushroom, Insect, Arachnid, Mollusc, Fish, Reptile, Amphibian, Bird, Mammal, Animal sau Other):",
-        "en": "Category (Plant, Mushroom, Insect, Arachnid, Mollusc, Fish, Reptile, Amphibian, Bird, Mammal, Animal or Other):"
+        "ro": "Categorie (Plant, Mushroom, Insect, Arachnid, Mollusc, Fish, Reptile, Amphibian, Bird, Mammal, Animal, Protozoa sau Other):",
+        "en": "Category (Plant, Mushroom, Insect, Arachnid, Mollusc, Fish, Reptile, Amphibian, Bird, Mammal, Animal, Protozoa or Other):"
     },
     "form_scientific_example": {
         "ro": "Nume științific corect (ex. Duchesnea indica):",

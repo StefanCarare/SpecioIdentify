@@ -37,7 +37,7 @@ Descrie tipul de habitat preferat: unde trăiește specia, în ce condiții și 
 7. **Fapt divers**
 Menționează un fapt deosebit, surprinzător sau interesant despre specie — ceva particular care o deosebește de celelalte specii înrudite sau care îi conferă o trăsătură unică (mecanism de apărare, adaptare ciudată, relație cu omul, proprietate neașteptată etc.). Dacă nu există un fapt remarcabil cunoscut, scrie „Necunoscut".
 
-8. **Secțiunea specifică categoriei** — alege o singură categorie potrivită speciei și urmează toate subsecțiunile ei. Păsările, insectele, arahnidele, moluștele, peștii, reptilele, amfibienii și mamiferele folosesc secțiunile proprii, nu și secțiunea generală Animale (rezervată celorlalte animale: crustacee, miriapode, viermi, echinoderme, cnidari etc.). Stabilește grupa din identitatea taxonomică a speciei, chiar dacă unele grupuri sunt catalogate în aplicație la Animale. Exemplele din paranteze sunt orientative, nu liste exhaustive; folosește numai caractere valabile pentru specie. Pentru o structură absentă scrie „Absent”, pentru un criteriu neaplicabil „Nu se aplică”, iar pentru informații necunoscute „Necunoscut”.
+8. **Secțiunea specifică categoriei** — alege o singură categorie potrivită speciei și urmează toate subsecțiunile ei. Păsările, insectele, arahnidele, moluștele, peștii, reptilele, amfibienii și mamiferele folosesc secțiunile proprii, nu și secțiunea generală Animale (rezervată celorlalte animale: crustacee, miriapode, viermi, echinoderme, cnidari etc.). Protozoarele (organisme unicelulare: amoebe, infuzorii, euglene, flagelate, ciliate și mixomicete ca Physarum sau Lycogala) folosesc secțiunea proprie Protozoa și nu sunt animale. Stabilește grupa din identitatea taxonomică a speciei, chiar dacă unele grupuri sunt catalogate în aplicație la Animale. Exemplele din paranteze sunt orientative, nu liste exhaustive; folosește numai caractere valabile pentru specie. Pentru o structură absentă scrie „Absent”, pentru un criteriu neaplicabil „Nu se aplică”, iar pentru informații necunoscute „Necunoscut”.
 
 - Pentru **Plante** — urmează toate subsecțiunile de mai jos:
   * **Port** (doar dintre: plantă erbaceată; arbust; copac; liană; epifită; parazită; semi-parazită).
@@ -170,6 +170,18 @@ Menționează un fapt deosebit, surprinzător sau interesant despre specie — c
   * **Substrat și nutriție** — sol, litieră, lemn sau alt substrat; saprotrofie, parazitism ori asociere micorizantă; gazde/parteneri cunoscuți.
   * **Fructificare** — perioada orientativă și condițiile naturale favorabile apariției corpurilor fructifere, cu variații climatice și regionale.
   * **Confuzii și siguranță** — specii asemănătoare și caractere diferențiale, mai ales față de cele toxice; precizează că profilul generat și fotografiile nu confirmă siguranța pentru consum. Nu recomanda consumul sau gustarea; verificarea de către un specialist este necesară.
+
+- Pentru **Protozoare** (organisme unicelulare: amoebe, infuzorii, euglene, flagelate, ciliate și mixomicete ca Physarum sau Lycogala) — urmează toate subsecțiunile de mai jos; dacă fotografia nu permite observarea microscopică a organismului, descrie colonia, plasmodiul, sporii sau structura vizibilă și precizează acest lucru:
+  * **Corp și formă** — ameboidă; flagelată; ciliată; sferică sau spinduliformă; prezența și dispunerea pseudopodelor, flagelilor sau ciliilor; perete celular sau absența lui.
+  * **Dimensiuni și scară** — ordinul de mărime (µm) dacă este cunoscut din surse, altfel „Necunoscut”; precizează dacă imaginea este macroscopică și ce anume se vede la scara reală.
+  * **Structuri vizibile** — nucleu sau macronucleu, vacuole contractile și alimentare, stigmă, kinetoplast sau alte organite descrise în literatură; numai structuri compatibile cu grupul.
+  * **Colonii, plasmodii și stadii** — colonii celulare, plasmodiu (la mixomicete), sor cu spori; modul de agregare și aspectul structurii reproductive dacă apar în fotografie.
+  * **Mișcare și hrănire** — deplasare prin pseudopode, flageli sau cili; heterotrofie, saprotrofie, parazitism ori simbioză; modul de procurare a hranei dacă este cunoscut.
+  * **Habitat și mediu** — apă dulce sau salină, sol umed, material vegetal în descompunere, interiorul gazdei la paraziți; salinitate, pH și temperatură unde sunt cunoscute.
+  * **Reproducere și ciclu** — diviziune simplă (schizogonie), reproducere sexuată (conjugare, meioză) unde este documentată; stadii rezistente (chist, oocist) și alternanța generațiilor dacă există.
+  * **Colorație și observare** — colorație naturală sau prin vopsire (lugol, metilen albastru); contrastul și structurile evidențiate în imagine; limitele observării fără microscop.
+  * **Ecologie și rol** — rolul în ecosistem (descompunător, pradă, parazit), dezvoltarea pe substraturi (lemn, frunze căzute), relațiile cu alte organisme și cu gazdele.
+  * **Confuzii și siguranță** — organisme sau specii asemănătoare și criterii diferențiale; precizează când fotografia nu poate susține identificarea la nivel de specie; la paraziți descrie doar riscul documentat, fără recomandări medicale.
 
 Reguli:
 * Nu adăuga alte secțiuni în afara celor enumerate.

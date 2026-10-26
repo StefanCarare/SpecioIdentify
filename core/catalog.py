@@ -170,7 +170,7 @@ La finalul răspunsului adaugă acest marker și apoi un singur obiect JSON vali
 Nu pune Markdown în obiectul JSON. Folosește exact aceste câmpuri standard:
 category, kingdom, genus, species, scientific_name, ro_name, en_name,
 confidence, is_uncertain.
-`category` trebuie să fie una dintre: Plant, Mushroom, Insect, Reptile, Amphibian, Bird, Mammal, Animal, Other.
+`category` trebuie să fie una dintre: Plant, Mushroom, Insect, Arachnid, Mollusc, Fish, Reptile, Amphibian, Bird, Mammal, Animal, Protozoa, Other.
 `confidence` este un număr între 0 și 1. Dacă o valoare nu poate fi stabilită,
 folosește null. Câmpurile suplimentare specifice acestui prompt pot fi adăugate
 în obiect, dar nu elimina câmpurile standard.
@@ -282,10 +282,13 @@ Câmpuri comune, obligatorii: {", ".join(SPECIES_PROFILE_FIELDS_COMMON)},
 plus `category`.
 Pentru Păsări, peste cele comune: {", ".join(SPECIES_PROFILE_FIELDS_BIRD)}.
 Pentru Plante, peste cele comune: {", ".join(SPECIES_PROFILE_FIELDS_PLANT)}.
-Pentru Animale, insecte și mamifere, peste cele comune: {", ".join(SPECIES_PROFILE_FIELDS_ANIMAL)}.
+Pentru Animale, insecte, arahnide, moluște, pești, reptile, amfibieni și
+mamifere, peste cele comune: {", ".join(SPECIES_PROFILE_FIELDS_ANIMAL)}.
+Pentru Protozoa sunt suficiente câmpurile comune; nu inventa chei noi.
 Completează toate câmpurile categoriei potrivite speciei; omite câmpurile
 celorlalte categorii (nu le umple cu null). `category` trebuie să fie una
-dintre: Plant, Mushroom, Insect, Reptile, Amphibian, Bird, Mammal, Animal, Other.
+dintre: Plant, Mushroom, Insect, Arachnid, Mollusc, Fish, Reptile, Amphibian,
+Bird, Mammal, Animal, Protozoa, Other.
 Vocabular închis (scrie EXACT unul dintre valorile permise, fără variații de
 scriere; dacă nu știi, scrie null):
 - petale: Inexistente, 1, 2, 3, 4, 5, 6, 7, Cel mult 4, Cel mult 5,
@@ -557,6 +560,7 @@ CANONICAL_GROUPS = (
     "amphibian",
     "bird",
     "mammal",
+    "protozoa",
 )
 
 GROUP_DISPLAY = {
@@ -570,6 +574,7 @@ GROUP_DISPLAY = {
     "amphibian": "Amphibian",
     "bird": "Bird",
     "mammal": "Mammal",
+    "protozoa": "Protozoa",
 }
 
 
@@ -621,6 +626,8 @@ def _category_folder(category: object) -> str:
         return "Animal"
     if "ciuper" in value or "fung" in value or "mushroom" in value:
         return "Mushroom"
+    if "protozo" in value:
+        return "Protozoa"
     return "Other"
 
 

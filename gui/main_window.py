@@ -854,7 +854,10 @@ class MainWindow:
             padding=10
         )
 
-        top_paned.add(image_frame)
+        # weight: prompt_frame e deja îngust (width=42 pe Text) și nu absoarbe
+        # spațiu extra; restul merge la species_prompt_frame, ca textele lui
+        # să fie vizibile la deschidere.
+        top_paned.add(image_frame, weight=1)
 
         # ----------------------------------------------------
         # Image list
@@ -1023,6 +1026,12 @@ class MainWindow:
             expand=True
         )
 
+        # Click pe miniatura din Images: deschide poza MARE într-o fereastră
+        # separată (același popup ca în Quick Catalog) — util când thumb-ul
+        # de 500x250 e prea mic pentru determinare.
+        self.preview_label.bind("<Button-1>", self._open_main_preview)
+        self.preview_label.configure(cursor="hand2")
+
         # ----------------------------------------------------
         # Photo Info
         # ----------------------------------------------------
@@ -1166,7 +1175,7 @@ class MainWindow:
             padding=10
         )
 
-        top_paned.add(prompt_frame)
+        top_paned.add(prompt_frame, weight=0)
 
         # Prompt selector
         prompt_controls = ttk.Frame(
@@ -1225,10 +1234,14 @@ class MainWindow:
             self.on_prompt_selected
         )
 
-        # Prompt editor        
+        # Prompt editor
+        # width=42: fără o lățime explicită, tk.Text cere 80 caractere
+        # (~640px) și lățimea cadrelui e dominată de caseta de text, nu de
+        # rândul cu butoane — de aceea Promptul acoperea Species Prompt.
         self.prompt_text = tk.Text(
             prompt_frame,
             height=7,
+            width=42,
             wrap="word",
             font=("Segoe UI", 10)
         )
@@ -1262,7 +1275,7 @@ class MainWindow:
             padding=10
         )
 
-        top_paned.add(species_prompt_frame)
+        top_paned.add(species_prompt_frame, weight=3)
 
         species_prompt_controls = ttk.Frame(
             species_prompt_frame
@@ -1317,6 +1330,39 @@ class MainWindow:
         self.set_species_prompt_text(
             self.load_species_prompt_template()
         )
+
+        # Plasează divizorul (sash) dintre Prompt și Species Prompt exact
+        # după rândul de controale (adică după butonul Update). Weight=0 pe
+        # prompt_frame îl ține la cererea lui; snap-ul acesta îl fixează
+        # precis, indiferent de font/DPI.
+        # ATENȚIE: after_idle rulează ÎNAINTE ca fereastra să fie mapată pe
+        # ecran — winfo_width()/winfo_rootx() întorc valori goale (≈0) și
+        # sashpos primea o poziție lângă zero, strângând Images + Prompt în
+        # o bandă invizibilă. De aceea reîncercăm la 50ms până când fereastra
+        # e mapată și măsura e plauzibilă (max 40 × 50ms = 2s).
+        def _snap_prompt_sash(tries=0):
+            try:
+                top_paned.update_idletasks()
+                if not self.root.winfo_ismapped():
+                    raise RuntimeError("window not mapped yet")
+                total = top_paned.winfo_width()
+                # marginea dreaptă a rândului de controale, în coordonate
+                # relative ferestrei Panedwindow
+                right_edge = (prompt_controls.winfo_rootx()
+                              - top_paned.winfo_rootx()
+                              + prompt_controls.winfo_width())
+                # măsurătoare plauzibilă: controalele chiar au o poziție
+                # în interiorul panoului (nu 0/0 de dinainte de mapare)
+                if total <= 200 or right_edge < 100 or right_edge >= total:
+                    raise RuntimeError(
+                        f"bad measure right_edge={right_edge} total={total}")
+                top_paned.sashpos(1, right_edge + 14)
+            except Exception:
+                if tries < 40:
+                    self.root.after(
+                        50, lambda: _snap_prompt_sash(tries + 1))
+
+        self.root.after_idle(_snap_prompt_sash)
 
 
         # ----------------------------------------------------
@@ -6309,7 +6355,14 @@ class MainWindow:
             messagebox.showinfo(t("web_title"), t("web_no_species"),
                                 parent=self.root)
             return
-        webbrowser.open(WIKIPEDIA_SPECIES_URL + quote(name.replace(" ", "_")))
+        # Speciile incerte („Lycogala sp.”) nu au articol propriu —
+        # scoatem „sp.” din link și deschidem direct pagina genului.
+        url_name = name
+        parts = url_name.split()
+        if (len(parts) > 1
+                and parts[-1].lower().rstrip(".") in ("sp", "spp")):
+            url_name = " ".join(parts[:-1])
+        webbrowser.open(WIKIPEDIA_SPECIES_URL + quote(url_name.replace(" ", "_")))
 
     def open_col_page(self):
         """Căutare CoL pentru textul din câmpul de căutare web."""
@@ -6344,6 +6397,167 @@ class MainWindow:
         """iNaturalist pentru textul din câmpul de căutare web."""
         self._browse_inaturalist_for(self._web_search_name())
 
+    def _open_main_preview(self, event=None):
+        """Click pe miniatura curentă (panoul Images): poza mare, popup.
+
+        Reutilizează _open_photo_preview — aceeași fereastră ca în Quick
+        Catalog (poză la ~80% ecran, text copiabil, butoane web).
+        """
+        if self.image_path is None:
+            return
+        # details=False: doar poza mare, fără info și fără butoane web —
+        # în fereastra principală oricum există Photo Info (dreapta) și
+        # butoanele de căutare.
+        self._open_photo_preview(self.image_path, parent=self.root,
+                                 details=False)
+
+    def _open_photo_preview(self, image_path, name=None, parent=None,
+                            details=True):
+        """Previzualizare mare a unei poze (+ detalii opționale).
+
+        - poza e scalată să încapă fără să depășească ~80% din ecran;
+        - details=True (Quick Catalog): text selectabil/copiabil cu specia,
+          folderul, calea + butoanele @CoL / @WIKIPEDIA / @iNAT;
+        - details=False (click pe poza din panoul Images): DOAR poza mare,
+          fără informații și fără butoane web (alea există în fereastra
+          principală); Escape sau OK închide.
+        """
+        from core.catalog import get_catalog_item, _category_folder
+
+        path = Path(image_path)
+        item = get_catalog_item(str(path), OUTPUT_DIR) or {}
+
+        sci = (item.get("scientific_name") or "").strip()
+        query = (name or "").strip() or sci or path.stem
+        ro_name = item.get("ro_name", "") or ""
+        en_name = item.get("en_name", "") or ""
+        category = _category_folder(item.get("category", "")) if item else ""
+        folder = (Path(item["catalog_path"]).parent
+                  if item.get("catalog_path") else path.parent)
+
+        prev = tk.Toplevel(parent or self.root)
+        prev.title(t("qc_preview_title"))
+        prev.transient(parent or self.root)
+
+        # Fereastra e plafonată la ecran, iar conținutul (poză + text +
+        # butoane) stă într-un canvas scrollabil, deci butoanele de jos
+        # rămân accesibile cu rotița chiar și la poze foarte mari.
+        screen_w = self.root.winfo_screenwidth()
+        screen_h = self.root.winfo_screenheight()
+        # Poza se încarcă întâi, ca fereastra să se încadreze pe lățimea
+        # ei (landscape), nu pe tot ecranul — rămâne loc dedesubt pt. text.
+        max_w = int(screen_w * 0.55)
+        max_h = int(screen_h * 0.62)
+        photo = None
+        try:
+            with Image.open(path) as im:
+                im.thumbnail((max_w, max_h))
+                photo = ImageTk.PhotoImage(im)
+        except Exception:
+            photo = None
+        img_w = photo.width() if photo else 480
+        img_h = photo.height() if photo else 360
+        win_w = min(img_w + 28, int(screen_w * 0.6))
+        # details=False: doar poza, deci nu mai e nevoie de cele ~270px
+        # rezervate textului/butoanelor de sub ea.
+        win_h = min(img_h + (270 if details else 64), int(screen_h * 0.86))
+        prev.geometry(f"{win_w}x{win_h}")
+        prev.minsize(420, 360)
+
+        pcanvas = tk.Canvas(prev, highlightthickness=0)
+        pvscroll = ttk.Scrollbar(prev, orient="vertical", command=pcanvas.yview)
+        scrollable = tk.Frame(pcanvas)
+        scrollable.bind("<Configure>",
+                        lambda e: pcanvas.configure(scrollregion=pcanvas.bbox("all")))
+        canvas_window = pcanvas.create_window((0, 0), window=scrollable, anchor="nw")
+        pcanvas.configure(yscrollcommand=pvscroll.set)
+        pcanvas.pack(side="left", fill="both", expand=True)
+        pvscroll.pack(side="right", fill="y")
+
+        # Lățimea conținutului urmează lățimea ferestrei.
+        pcanvas.bind("<Configure>",
+                     lambda e: pcanvas.itemconfigure(canvas_window, width=e.width))
+
+        # Scroll cu rotița mouse-ului (Windows + Linux).
+        def _on_prev_wheel(event):
+            if getattr(event, "num", None) == 4:
+                pcanvas.yview_scroll(-1, "units")
+            elif getattr(event, "num", None) == 5:
+                pcanvas.yview_scroll(1, "units")
+            else:
+                pcanvas.yview_scroll(-1 if event.delta > 0 else 1, "units")
+
+        prev.bind("<MouseWheel>", _on_prev_wheel, add="+")
+        prev.bind("<Button-4>", _on_prev_wheel, add="+")
+        prev.bind("<Button-5>", _on_prev_wheel, add="+")
+
+        # Pozarea pozei ( deja scalată mai sus ).
+        if photo is not None:
+            img_label = tk.Label(scrollable, image=photo, bg="#222")
+            img_label.image = photo  # referință vie (altfel GC o șterge)
+            img_label.pack(padx=8, pady=(8, 4))
+        else:
+            ttk.Label(scrollable, text=t("qc_preview_missing"),
+                      padding=8).pack(padx=8, pady=8)
+
+        # Informații — text selectabil/copiabil, nu editabil.
+        # Doar în modul cu detalii (Quick Catalog); din panoul Images
+        # utilizatorul a cerut strict poza mare, fără text sub ea.
+        if details:
+            info_lines = [f"{t('lbl_species')} {query}"]
+            if sci and sci != query:
+                info_lines.append(f"Științific: {sci}")
+            if ro_name or en_name:
+                info_lines.append(f"Nume: {ro_name} / {en_name}".rstrip(" /"))
+            if category:
+                info_lines.append(f"{t('lbl_category')} {category}")
+            info_lines.append(f"{t('lbl_folder')} {folder}")
+            info_lines.append(f"Fișier: {path}")
+
+            info_text = tk.Text(scrollable, height=len(info_lines) + 1,
+                                wrap="word",
+                                font=("Segoe UI", 10), relief="flat",
+                                background=prev.cget("background"))
+            info_text.pack(fill="x", padx=8, pady=4)
+            info_text.insert("1.0", "\n".join(info_lines))
+            info_text.configure(state="disabled")  # rămâne selectabil + copiabil
+            ttk.Label(scrollable, text=t("qc_copy_hint"),
+                      foreground="#888").pack(fill="x", padx=8)
+
+            # Căutare pe internet după specie.
+            web_bar = ttk.Frame(scrollable)
+            web_bar.pack(fill="x", padx=8, pady=(6, 4))
+            ttk.Label(web_bar, text=t("qc_web_search")).pack(side="left")
+            ttk.Button(web_bar, text=t("btn_open_col"),
+                       command=lambda: self._browse_col_for(query)).pack(
+                side="left", padx=(6, 0))
+            ttk.Button(web_bar, text=t("btn_open_wikipedia"),
+                       command=lambda: self._browse_wikipedia_for(query)).pack(
+                side="left", padx=(6, 0))
+            ttk.Button(web_bar, text=t("btn_open_inaturalist"),
+                       command=lambda: self._browse_inaturalist_for(query)).pack(
+                side="left", padx=(6, 0))
+
+        # Bara de jos: (opțional) copiază calea + deschide folder + închide.
+        btn_bar = ttk.Frame(scrollable)
+        btn_bar.pack(fill="x", padx=8, pady=(0, 8))
+
+        if details:
+            def _copy_path():
+                prev.clipboard_clear()
+                prev.clipboard_append(str(path))
+
+            ttk.Button(btn_bar, text=t("qc_copy_path"),
+                       command=_copy_path).pack(side="left")
+            ttk.Button(btn_bar, text=t("btn_open_folder"), command=lambda: (
+                os.startfile(str(folder)) if folder.exists() else None
+            )).pack(side="left", padx=(6, 0))
+        ttk.Button(btn_bar, text=t("btn_ok"),
+                   command=prev.destroy).pack(side="right")
+
+        # Escape închide în ambele variante (la fel ca și click pe OK).
+        prev.bind("<Escape>", lambda _e: prev.destroy())
+
     def open_quick_catalog_dialog(self):
         """Dialog pentru catalogare rapidă: alege imagini + specie din taxonomy.db."""
         from core.catalog import quick_catalog_images, get_catalog_item
@@ -6355,22 +6569,30 @@ class MainWindow:
 
         win = tk.Toplevel(self.root)
         win.title("Catalog rapid")
-        win.geometry("640x560")
+        win.geometry("820x640")
+        win.minsize(520, 560)
         win.transient(self.root)
         win.grab_set()
 
-        # Canvas scrollabil principal (conține TOTUL)
-        main_canvas = tk.Canvas(win, highlightthickness=0)
-        vscroll = ttk.Scrollbar(win, orient="vertical", command=main_canvas.yview)
-        scrollable = tk.Frame(main_canvas)
+        # Container principal: conținutul FIX, fără scroll global, ca să
+        # nu dispară controalele (specie, categorie, butoane) când derulezi
+        # pozele. Doar grid-ul de poze are scroll propriu, mai jos.
+        scrollable = tk.Frame(win)
+        scrollable.pack(fill="both", expand=True)
 
-        scrollable.bind("<Configure>",
-                        lambda e: main_canvas.configure(scrollregion=main_canvas.bbox("all")))
-        main_canvas.create_window((0, 0), window=scrollable, anchor="nw", width=600)
-        main_canvas.configure(yscrollcommand=vscroll.set)
+        _wrap_widgets = []
 
-        main_canvas.pack(side="left", fill="both", expand=True)
-        vscroll.pack(side="right", fill="y")
+        def _on_win_resize(event):
+            if event.widget is not win:
+                return
+            wrap = max(200, event.width - 40)
+            for w in _wrap_widgets:
+                try:
+                    w.configure(wraplength=wrap)
+                except tk.TclError:
+                    pass
+
+        win.bind("<Configure>", _on_win_resize)
 
         # --- Imaginea țintă (cea selectată în lista principală) ---
         # Default: catalogăm DOAR imaginea selectată, fără grid de poze.
@@ -6378,6 +6600,12 @@ class MainWindow:
         if target_path is None and self.image_paths:
             target_path = self.image_paths[0]
         target_box = {"path": target_path}
+
+        # Lista de lucru a DIALOGULUI: o copie a listei principale. "📥 Încarcă
+        # imagini" și "📂 Folder întreg" modifică DOAR această listă, nu și
+        # lista principală (self.image_paths) — altfel, după închiderea
+        # dialogului, panoul Images rămânea cu pozele altui folder.
+        qc_paths = list(self.image_paths)
 
         info_top = ttk.Label(
             scrollable,
@@ -6391,34 +6619,94 @@ class MainWindow:
         pics_label = ttk.Label(pics_header, text=t("qc_pics_header"),
                                font=("", 10, "bold"))
         pics_label.pack(side="left")
+        load_pics_btn = ttk.Button(pics_header, text=t("qc_load_images"))
+        load_pics_btn.pack(side="right", padx=(0, 6))
+        load_folder_btn = ttk.Button(pics_header, text=t("qc_load_folder"))
+        load_folder_btn.pack(side="right", padx=(0, 6))
         toggle_pics_btn = ttk.Button(pics_header, text=t("qc_show_pics"))
         toggle_pics_btn.pack(side="right")
         pics_header.pack(fill="x", padx=10, pady=(6, 2))
 
         pics_box = tk.Frame(scrollable, bg="#fafafa")
         # NU pack la început — apare doar la cerere.
+        # Grid-ul stă într-un canvas cu scroll propriu: pozele se derulează
+        # independent, iar controalele de sus rămân pe loc.
+        pics_canvas = tk.Canvas(pics_box, bg="#fafafa", highlightthickness=0)
+        pics_vscroll = ttk.Scrollbar(pics_box, orient="vertical",
+                                     command=pics_canvas.yview)
+        pics_canvas.configure(yscrollcommand=pics_vscroll.set)
+        pics_vscroll.pack(side="right", fill="y")
+        pics_canvas.pack(side="left", fill="both", expand=True)
+
+        def _on_pics_wheel(event):
+            if getattr(event, "num", None) == 4:
+                pics_canvas.yview_scroll(-1, "units")
+            elif getattr(event, "num", None) == 5:
+                pics_canvas.yview_scroll(1, "units")
+            else:
+                pics_canvas.yview_scroll(-1 if event.delta > 0 else 1, "units")
+
+        for w in (pics_canvas, pics_box):
+            w.bind("<MouseWheel>", _on_pics_wheel)
+            w.bind("<Button-4>", _on_pics_wheel)
+            w.bind("<Button-5>", _on_pics_wheel)
 
         THUMB = 80
-        CELL_W = THUMB + 12  # lățime estimată per celulă
+        # Geometria unei celule, în pixeli. CELL_TOTAL = pantă reală pe
+        # coloană (imagine + padx label + chenar + padx grid). Folosim o
+        # lățime FIXĂ pe celulă (pack_propagate(False)) și coloane cu
+        # weight=1, ca numele lung să nu lărgească celula și să nu mai
+        # fie tăiată ultima poză de pe rând.
+        GRID_PADX = 8      # padx=4 în grid × 2 părți
+        CELL_BORDER = 2    # bd=1 × 2 părți
+        IMG_PADX = 4       # padx=2 în jurul imagini × 2 părți
+        CELL_W = THUMB + IMG_PADX + CELL_BORDER          # lățime celulă
+        CELL_TOTAL = CELL_W + GRID_PADX                  # pantă per coloană
+        CELL_H = THUMB + 24                              # imagine + legendă
         img_vars = []
         photo_refs = []
         all_cells = []  # refereță la toate celulele pentru reflow
         pics_state = {"built": False, "visible": False}
         grid_frame = None
+        grid_window = None
 
         def _build_grid():
             """Construiește grid-ul de miniaturi (o singură dată, la cerere)."""
-            nonlocal grid_frame
-            grid_frame = tk.Frame(pics_box, bg="#fafafa")
-            grid_frame.pack(fill="x", padx=10, pady=4)
+            nonlocal grid_frame, grid_window
+            # Resetare pentru reconstrucție (la încărcarea unor poze noi).
+            img_vars.clear()
+            del all_cells[:]
+            photo_refs.clear()
+            if grid_frame is not None:
+                grid_frame.destroy()
+                grid_frame = None
+            if grid_window is not None:
+                pics_canvas.delete(grid_window)
+                grid_window = None
+            grid_frame = tk.Frame(pics_canvas, bg="#fafafa")
+            grid_window = pics_canvas.create_window((0, 0), window=grid_frame,
+                                                    anchor="nw")
 
-            for idx, p in enumerate(self.image_paths):
+            def _on_grid_configure(e):
+                pics_canvas.configure(scrollregion=pics_canvas.bbox("all"))
+                _reflow()
+
+            grid_frame.bind("<Configure>", _on_grid_configure)
+            pics_canvas.bind("<Configure>",
+                             lambda e: pics_canvas.itemconfigure(grid_window,
+                                                                 width=e.width))
+
+            for idx, p in enumerate(qc_paths):
                 already = get_catalog_item(p, OUTPUT_DIR) is not None
                 var = tk.BooleanVar(value=False)
                 img_vars.append((p, var))
 
                 cell = tk.Frame(grid_frame, bd=1, relief="solid",
-                                bg="#ddd" if already else "#fff")
+                                bg="#ddd" if already else "#fff",
+                                width=CELL_W, height=CELL_H)
+                # Lățime/înălțime FIXĂ: celula nu se mai mărește după numele
+                # lung al fișierului, deci coloanele rămân egale cu CELL_TOTAL.
+                cell.pack_propagate(False)
                 all_cells.append((cell, var, already))
 
                 try:
@@ -6436,58 +6724,156 @@ class MainWindow:
 
                 def _toggle(event, v=var, c=cell, catalogued=already, path=p):
                     if catalogued:
-                        # Afișează unde e catalogată poza
-                        item = get_catalog_item(path, OUTPUT_DIR)
-                        if item:
-                            sci = item.get("scientific_name", "?")
-                            cat = item.get("category", "?")
-                            cpath = item.get("catalog_path", "?")
-                            folder = Path(cpath).parent if cpath else "?"
-                            msg = "\n".join([
-                                f"{t('lbl_species')} {sci or '?'}",
-                                f"{t('lbl_category')} {cat or '?'}",
-                                f"{t('lbl_folder')} {folder}",
-                            ])
-                            messagebox.showinfo(t("qc_catalogued_photo"), msg, parent=win)
+                        # Poză deja catalogată: deschide previzualizarea mare
+                        # (în locul popup-ului mic cu doar text).
+                        self._open_photo_preview(path, parent=win)
                         return
                     v.set(not v.get())
                     c.configure(bd=3 if v.get() else 1,
                                 bg="#90caf9" if v.get() else "#ffffff")
 
+                def _preview(event, path=p):
+                    # Dublu-click sau click dreapta: previzualizare mare,
+                    # indiferent dacă poza e catalogată sau nu.
+                    self._open_photo_preview(path, parent=win)
+
                 img_label.bind("<Button-1>", _toggle)
+                img_label.bind("<Double-Button-1>", _preview)
+                img_label.bind("<Button-3>", _preview)
 
                 name_short = p.stem[:14] + ("…" if len(p.stem) > 14 else "")
                 caption = name_short + (" ✓" if already else "")
                 cap = tk.Label(cell, text=caption, font=("", 8),
                                bg="#ddd" if already else "#fff",
-                               fg="#888" if already else "#333")
+                               fg="#888" if already else "#333",
+                               anchor="w")
                 cap.pack(fill="x", padx=2, pady=(0, 2))
                 cap.bind("<Button-1>", _toggle)
+                cap.bind("<Double-Button-1>", _preview)
+                cap.bind("<Button-3>", _preview)
 
-        # Reflow la redimensionare
+                # Rotița mouse-ului peste o miniatură derulează zona de poze.
+                for widget in (img_label, cap, cell):
+                    widget.bind("<MouseWheel>", _on_pics_wheel)
+                    widget.bind("<Button-4>", _on_pics_wheel)
+                    widget.bind("<Button-5>", _on_pics_wheel)
+
+        # Reflow la redimensionare (număr de coloane după lățimea reală)
         def _reflow(event=None):
             if grid_frame is None:
                 return
-            width = grid_frame.winfo_width()
-            cols = max(1, width // CELL_W)
+            width = pics_canvas.winfo_width()
+            # Împărțim pe pantă (CELL_TOTAL), nu pe lățimea simplă a celulei,
+            # altfel se calculau prea multe coloane și ultima se tăia.
+            cols = max(1, width // CELL_TOTAL)
+            for col in range(cols):
+                # weight=1: coloanele împart egal lățimea rămasă; uniform
+                # forțează toate egale, deci nimic nu iese în afara rândului.
+                grid_frame.columnconfigure(col, weight=1, uniform="qc")
             for i, (c, v, cat) in enumerate(all_cells):
                 c.grid(row=i // cols, column=i % cols, padx=4, pady=4, sticky="nsew")
 
         def _toggle_pics():
             if not pics_state["built"]:
                 _build_grid()
-                grid_frame.bind("<Configure>", _reflow)
                 pics_state["built"] = True
             if pics_state["visible"]:
                 pics_box.pack_forget()
                 toggle_pics_btn.configure(text=t("qc_show_pics"))
                 pics_state["visible"] = False
             else:
-                pics_box.pack(fill="x", padx=0, pady=0)
+                pics_box.pack(fill="both", expand=True, padx=0, pady=(2, 6))
+                toggle_pics_btn.configure(text=t("qc_hide_pics"))
+                pics_state["visible"] = True
+
+        def _rebuild_grid():
+            """Construiește/reconstruiește grid-ul și îl face vizibil."""
+            _build_grid()
+            pics_state["built"] = True
+            _reflow()
+
+        def _load_pics():
+            """Încarcă imagini din orice folder și le adaugă în grid.
+
+            Util când anumite poze din folderul curent s-au dovedit a fi alt
+            organism și vor mutate în altă categorie (ex. ciuperci →
+            protozoare): alegi pozele din alt folder fără a reîncărca analiza.
+            """
+            from tkinter import filedialog as _fd
+            chosen = _fd.askopenfilenames(
+                parent=win,
+                title=t("qc_load_images_title"),
+                initialdir=str(Path(self.image_paths[0]).parent)
+                if self.image_paths else str(APP_ROOT / "input"),
+                filetypes=[
+                    ("Image files", "*.jpg *.jpeg *.png *.webp *.bmp *.tif *.tiff"),
+                    ("All files", "*.*"),
+                ],
+            )
+            if not chosen:
+                return
+            added = 0
+            for raw in chosen:
+                p = Path(raw)
+                if p not in qc_paths:
+                    qc_paths.append(p)
+                    added += 1
+            # Reîncarcă grid-ul ca să apară și noile poze.
+            # Lista principală (self.image_paths) NU se atinge: dialogul are
+            # propria listă de lucru (qc_paths).
+            _rebuild_grid()
+            if not pics_state["visible"]:
+                pics_box.pack(fill="both", expand=True, padx=0, pady=(2, 6))
+                toggle_pics_btn.configure(text=t("qc_hide_pics"))
+                pics_state["visible"] = True
+
+        def _load_folder():
+            """Înlocuiește pozele din dialog cu un folder întreg.
+
+            Modifică DOAR lista dialogului (qc_paths), nu lista principală
+            de lucru — panoul Images rămâne neatins după închidere.
+            Practic când organizezi pe categorii în foldere separate (ex.
+            mushrooms/ vs protozoare/): alegi folderul nou și vezi pozele
+            lui în grid.
+            """
+            from tkinter import filedialog as _fd
+            start = (str(Path(self.image_paths[0]).parent)
+                     if self.image_paths else str(APP_ROOT / "input"))
+            folder = _fd.askdirectory(
+                parent=win,
+                title=t("qc_load_folder_title"),
+                initialdir=start,
+            )
+            if not folder:
+                return
+            folder_path = Path(folder)
+            extensions = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
+            new_paths = sorted(
+                p for p in folder_path.iterdir()
+                if p.is_file() and p.suffix.lower() in extensions
+            )
+            if not new_paths:
+                messagebox.showwarning(t("qc_title"), t("qc_folder_empty"),
+                                       parent=win)
+                return
+            # Replace doar în dialog (qc_paths) — lista principală de lucru
+            # NU se atinge, iar imaginea-țintă a ferestrei principale
+            # (self.image_path) rămâne ce avea.
+            qc_paths[:] = new_paths
+            # Resetează imaginea-țintă pe prima din noul folder.
+            target_box["path"] = new_paths[0]
+            info_top.configure(
+                text=t("qc_selected_image").format(name=Path(new_paths[0]).name))
+            # Reîncarcă grid-ul cu noile poze.
+            _rebuild_grid()
+            if not pics_state["visible"]:
+                pics_box.pack(fill="both", expand=True, padx=0, pady=(2, 6))
                 toggle_pics_btn.configure(text=t("qc_hide_pics"))
                 pics_state["visible"] = True
 
         toggle_pics_btn.configure(command=_toggle_pics)
+        load_pics_btn.configure(command=_load_pics)
+        load_folder_btn.configure(command=_load_folder)
 
         # --- Câmp specie științifică ---
         ttk.Label(scrollable, text=t("qc_sci_name_label")).pack(
@@ -6508,6 +6894,7 @@ class MainWindow:
         validated_label = ttk.Label(scrollable, textvariable=validated_var, font=("", 10, "bold"),
                                     foreground="#2e7d32", wraplength=560, justify="left")
         validated_label.pack(fill="x", padx=10, pady=(2, 0))
+        _wrap_widgets.extend([info_top, validated_label])
 
         # Info specie
         info_frame = ttk.LabelFrame(scrollable, text=t("qc_info_frame"))
@@ -6521,7 +6908,7 @@ class MainWindow:
         cat_combo = ttk.Combobox(info_frame, textvariable=cat_var,
                                  values=["Plant", "Mushroom", "Insect", "Arachnid", "Mollusc",
                                          "Fish", "Reptile", "Amphibian", "Bird", "Mammal",
-                                         "Animal", "Other"],
+                                         "Animal", "Protozoa", "Other"],
                                  state="readonly", width=12)
         cat_combo.grid(row=0, column=1, sticky="w", padx=4, pady=2)
 
@@ -6565,6 +6952,7 @@ class MainWindow:
             "plantae": "Plant",
             "animalia": "Animal",
             "fungi": "Mushroom",
+            "protozoa": "Protozoa",
         }
 
         def _kingdom_to_category(kingdom: str) -> str:
@@ -6655,6 +7043,11 @@ class MainWindow:
                 ttk.Button(btn_bar, text=t("btn_ok"), command=dlg.destroy).pack(side="right")
                 if copied > 0:
                     for p in selected:
+                        # Scoate din lista dialogului.
+                        while p in qc_paths:
+                            qc_paths.remove(p)
+                        # Și din lista principală, DOAR dacă era acolo
+                        # (pozele încărcate din alte foldere nu o ating).
                         try:
                             if p in self.image_paths:
                                 self.image_paths.remove(p)
@@ -6664,7 +7057,7 @@ class MainWindow:
                         self.image_locations.pop(p, None)
                     if target_box["path"] in selected:
                         target_box["path"] = (
-                            self.image_paths[0] if self.image_paths else None
+                            qc_paths[0] if qc_paths else None
                         )
                         if target_box["path"] is not None:
                             info_top.configure(
@@ -7184,15 +7577,32 @@ class MainWindow:
         fereastră cu formular — în loc de 4 ferestre simpledialog
         consecutive.
 
+        Când mai multe imagini sunt selectate în lista „Images”, valorile
+        introduse în formular se aplică la TOATE fotografiile selectate
+        (aceeași specie, categoria și denumirile populare pentru fiecare).
         ``prefill`` (opțional) suprascrie câmpurile pre-completate din
-        catalog — folosit de dialogul de verificare CoL pentru a propune
-        specia acceptată fără a schimba restul valorilor.
+        catalog — folosit de dialogul de verificare CoL.
         """
         if self.image_path is None:
             return
 
-        item = get_catalog_item(self.image_path, OUTPUT_DIR)
-        if not item:
+        # Alegeți imaginile țintă: toate rândurile selectate, cu fallback la
+        # imaginea curentă când nu există selecție deliberată (backward-
+        # compatibil, unică imagine).
+        indices = self.selected_indices()
+        if not indices:
+            try:
+                indices = [self.image_paths.index(self.image_path)]
+            except (ValueError, AttributeError):
+                return
+        if not indices:
+            return
+
+        target_paths = [self.image_paths[i] for i in indices]
+
+        # Prefill de la prima imagine selectată.
+        first_item = get_catalog_item(target_paths[0], OUTPUT_DIR)
+        if not first_item:
             messagebox.showinfo(
                 t("title_catalog"),
                 t("info_analyze_before_reclassify"),
@@ -7201,8 +7611,11 @@ class MainWindow:
             return
 
         # Formular într-o singură fereastră
+        title = t("title_update_species")
+        if len(target_paths) > 1:
+            title = f"{title} ({len(target_paths)} imagini)"
         form = tk.Toplevel(self.root)
-        form.title("Update species")
+        form.title(title)
         form.transient(self.root)
         form.grab_set()
         form.geometry("480x340")
@@ -7221,7 +7634,7 @@ class MainWindow:
             (t("form_en_name"), "en_name"),
         ]):
             ttk.Label(form, text=label).pack(anchor="w", padx=12, pady=(8 if idx == 0 else 4, 0))
-            initial = item.get(key, "") or ""
+            initial = first_item.get(key, "") or ""
             if prefill and prefill.get(key):
                 initial = prefill[key]
             if key == "category":
@@ -7336,51 +7749,85 @@ class MainWindow:
             )
             return
 
-        try:
-            destination = update_catalog_classification(
-                self.image_path,
-                OUTPUT_DIR,
-                category,
-                scientific_name,
-                ro_name,
-                en_name,
-            )
-            # Fișierul a fost mutat în folderul noii specii: re-ancorăm
-            # starea GUI-ului la noua cale, altfel orice reîncărcare
-            # (load_saved_result, refresh_image_list, start_analysis)
-            # citește vechea cale — care nu mai există — și crapă cu
-            # FileNotFoundError. Relevant mai ales când poza e încărcată
-            # direct din output/ (fluxul de recatalogare).
-            old_path = self.image_path
+        # Aplică pe TOATE imaginile selectate, colectând succesurile și erorile.
+        updated = []
+        errors = []
+        for path in target_paths:
+            try:
+                destination = update_catalog_classification(
+                    path,
+                    OUTPUT_DIR,
+                    category,
+                    scientific_name,
+                    ro_name,
+                    en_name,
+                )
+                updated.append((path, destination))
+            except Exception as exc:
+                errors.append((path, str(exc)))
+
+        # Re-ancorează starea GUI-ului pentru fiecare imagine actualizată.
+        for old_path, destination in updated:
             try:
                 current_index = self.image_paths.index(old_path)
                 self.image_paths[current_index] = destination
             except ValueError:
-                current_index = None
-            self.image_path = destination
+                pass
             if old_path in self.image_locations:
                 self.image_locations[destination] = self.image_locations.pop(old_path)
+
+        if updated:
+            self.image_path = updated[0][1]
             self.update_catalog_buttons()
-
-            # Reîncărcăm panourile cu datele deja corectate: altfel
-            # „Output items” și profilul specii arată în continuare vechea
-            # identificare, deși rândul din catalog o indică pe cea nouă.
+            self.refresh_image_list()
             self.load_saved_result(self.image_path)
-            self.set_status(t("status_catalog_updated_name").format(destination.parent.name))
 
-            # Singurul pop-up de confirmare pentru reîncărcare
-            if messagebox.askyesno(
-                t("title_catalog_updated"),
-                t("confirm_rerun_after_update"),
-                parent=self.root,
-            ):
-                self.start_analysis()
-            else:
-                self.set_status(
-                    t("status_catalog_updated_pending").format(destination.parent.name)
+        # Mesaj sumar
+        total = len(target_paths)
+        ok = len(updated)
+        err = len(errors)
+
+        if err == 0 and ok > 0:
+            species_folder = Path(updated[0][1]).parent.name if updated else ""
+            self.set_status(
+                t("status_catalog_updated_name").format(
+                    f"{ok} / {total} imagini → {species_folder}"
                 )
-        except Exception as exc:
-            messagebox.showerror(t("err_catalog_update"), str(exc), parent=self.root)
+            )
+            if ok > 1:
+                messagebox.showinfo(
+                    t("title_catalog_updated"),
+                    t("info_catalog_updated_multi").format(ok=ok, total=total),
+                    parent=self.root,
+                )
+            else:
+                # Comportament original (singură imagine): întreabă dacă
+                # reîmprospătăm descrierea.
+                if messagebox.askyesno(
+                    t("title_catalog_updated"),
+                    t("confirm_rerun_after_update"),
+                    parent=self.root,
+                ):
+                    self.start_analysis()
+                else:
+                    self.set_status(
+                        t("status_catalog_updated_pending").format(
+                            Path(updated[0][1]).parent.name
+                        )
+                    )
+        elif ok == 0 and err == 0:
+            self.set_status(t("status_done").format(""))
+        else:
+            bad = "\n".join(
+                f"• {Path(p).name}: {e}" for p, e in errors[:10]
+            )
+            messagebox.showerror(
+                t("err_catalog_update"),
+                t("err_catalog_update_multi").format(
+                    ok=ok, total=total, errors=bad
+                ),
+                parent=self.root,
+            )
 
     # În interiorul clasei MainWindow – adiacent altor metode ca get_catalog_item etc.
     # Sugerat: imediat după metoda update_species_classification()
@@ -7393,7 +7840,11 @@ class MainWindow:
         ro_name = item.get("ro_name", "")
         en_name = item.get("en_name", "")
         category_raw = item.get("category", "")
-        category = map_category(category_raw)
+        # `map_category` nu a existat niciodată (NameError la click pe
+        # miniatură); categoria din DB e deja forma-canonică de folder,
+        # deci o normalizează cu același filtru folosit peste tot.
+        from core.catalog import _category_folder
+        category = _category_folder(category_raw)
         folder = get_catalog_folder(image_path, OUTPUT_DIR)
 
         info_lines = [

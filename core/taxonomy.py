@@ -234,6 +234,8 @@ def lookup_catalog_group(scientific_name, db_path=None):
                                  "polychaeta", "echinoidea", "asteroidea"):
                     return "Animal"
                 return "Animal"
+            if kingdom == "protozoa":
+                return "Protozoa"
             return "Other"
         finally:
             con.close()
@@ -542,6 +544,7 @@ _VAL_ANCHOR = {
     "arachnid": ("Animalia", "Arachnida"),
     "mollusc": ("Animalia", "Mollusca"),
     "fish": ("Animalia", ""),
+    "protozoa": ("Protozoa", ""),
 }
 
 
